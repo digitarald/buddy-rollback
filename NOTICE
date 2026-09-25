@@ -1,0 +1,15 @@
+BUDDY: ROLLBACK
+
+This is an unofficial fan project and is not affiliated with, endorsed by, or
+sponsored by Microsoft.
+
+Buddy is based on the chat pet from Visual Studio Code:
+https://github.com/microsoft/vscode/tree/main/src/vs/workbench/contrib/chat/browser/widget
+
+Visual Studio Code is Copyright (c) Microsoft Corporation and is made available
+under the MIT License:
+https://github.com/microsoft/vscode/blob/main/LICENSE.txt
+
+"Microsoft", "Visual Studio Code", and related names and marks are trademarks
+of Microsoft Corporation. No trademark rights are granted by this project.
+
