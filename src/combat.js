@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { G } from './state.js';
 import { audio } from './audio.js';
-import { addTrauma, flashLight, flashScreen, punchZoom, aberrate } from './render.js';
+import { addTrauma, flashLight, flashScreen, punchZoom, aberrate, shockwave } from './render.js';
+import { impact, scorch, floorRipple, rumble } from './juice.js';
 import { burst, dust, damageNumber, ring, lightning, teleCircle, addTransient, slash } from './fx.js';
 import { starMesh } from './models.js';
 import { glowMat } from './materials.js';
 import { glyphTexture } from './textures.js';
-import { moveCircle } from './world.js';
+import { moveCircle, smashBreakables } from './world.js';
 import { rand, angleDiff } from './util.js';
+import { elementImpact, critFlash, EL_COLOR, slotTier } from './vfx.js';
 
 export const EL = {
 	burn: { color: 0xff7a2f, css: '#ff7a2f' },
@@ -61,13 +63,20 @@ export function hitEnemy(e, base, opts = {}) {
 			audio.play(crit ? 'crit' : 'hit', { vol: opts.vol ?? 1 });
 			G.hitstop = Math.max(G.hitstop, opts.hitstop ?? (crit ? 0.085 : 0.045));
 			addTrauma(opts.shake ?? (crit ? 0.22 : 0.1));
-			if (crit) { flashLight(e.pos, 0xffe066, 40, 0.12); aberrate(0.012); }
+			if (crit) { flashLight(e.pos, 0xffe066, 40, 0.12); aberrate(0.012); critFlash(e.pos.x, e.height * 0.7, e.pos.z, opts.critColor ?? 0xffe066); }
+			const big = crit || (opts.hitstop ?? 0) > 0.06;
+			impact(e.pos.x, e.pos.z, { y: e.height * 0.55, color: crit ? 0xffe066 : (opts.color ?? P.model.colors.glow), color2: 0xffffff, dir: Math.atan2(dir.z, dir.x), power: big ? 1.4 : 0.7, chunk: big && !e.isBoss ? 3 : 0, ripple: big ? 0.35 : 0 });
+			rumble(big ? 0.45 : 0.18, big ? 0.6 : 0.3, big ? 90 : 50);
 		}
 	}
 	if (source === 'attack' || source === 'omega') P.gainMp(3);
 
 	// elements
 	const el = source === 'attack' || source === 'omega' ? m.attackEl : source === 'special' ? m.specialEl : null;
+	if (el && !opts.silent) {
+		const tier = Math.max(0, slotTier(P, source === 'special' ? 'special' : 'attack'));
+		elementImpact(el, e.pos.x, e.height * 0.55, e.pos.z, Math.atan2(dir.z, dir.x), 0.8 + tier * 0.2 + (crit ? 0.3 : 0));
+	}
 	if (el && e.alive) {
 		const pow = source === 'special' ? m.specialPow : m.attackPow;
 		applyElement(e, el, pow, source);
@@ -79,9 +88,7 @@ export function applyElement(e, el, pow, source) {
 	const m = G.player.mods;
 	switch (el) {
 		case 'burn': {
-			const dps = pow * m.burnMul;
-			if (!e.status.burn || e.status.burn.dps <= dps) e.status.burn = { dps, t: 3, tick: 0 };
-			else e.status.burn.t = 3;
+			applyBurn(e, pow * m.burnMul, 3);
 			break;
 		}
 		case 'chill': addChill(e, source === 'special' ? 2 : 1); break;
@@ -90,11 +97,32 @@ export function applyElement(e, el, pow, source) {
 	}
 }
 
+export function applyBurn(e, dps, t = 3) {
+	if (!e.alive) return;
+	if (!e.status.burn || e.status.burn.dps <= dps) e.status.burn = { dps, t, tick: 0 };
+	else e.status.burn.t = Math.max(e.status.burn.t, t);
+	thermalShock(e);
+}
+
+// Duo (Pyra + Glacé): foes both Burning and Chilled erupt in steam.
+function thermalShock(e) {
+	const m = G.player.mods;
+	if (!m.thermalShock || !e.alive || !e.status.burn || e.status.chill <= 0) return;
+	if ((e.steamCd || 0) > G.time) return;
+	e.steamCd = G.time + 0.9;
+	const x = e.pos.x, z = e.pos.z;
+	burst({ x, z, y: 0.8, count: 30, color: 0xffffff, color2: 0xbff4ff, speed: 3, up: 3, size: 0.6, sizeEnd: 1.2, life: 0.8, gravity: 1, drag: 3 });
+	burst({ x, z, y: 0.5, count: 14, color: 0xff7a2f, color2: 0x7fe6ff, speed: 6, size: 0.25, life: 0.4 });
+	damageNumber(x, e.height + 0.6, z, 0, { text: 'THERMAL SHOCK', color: '#ffd9c0' });
+	setTimeout(() => explodeAt(x, z, 2.4, m.thermalShock, { color: 0xffd9c0, source: 'element', shake: 0.2 }), 0);
+}
+
 export function addChill(e, stacks) {
 	if (!e.alive) return;
 	const s = e.status;
 	s.chill = Math.min(5, s.chill + stacks);
 	s.chillT = 4;
+	thermalShock(e);
 	burst({ x: e.pos.x, z: e.pos.z, y: e.height * 0.6, count: 5, color: 0xbff4ff, speed: 2, size: 0.18, life: 0.5, gravity: -2 });
 	if (s.chill >= 5 && !e.isBoss) {
 		s.chill = 0;
@@ -118,34 +146,57 @@ export function addConflict(e, stacks) {
 		burst({ x: e.pos.x, z: e.pos.z, y: 0.8, count: 22, color: 0xff4fd8, color2: 0x7dff9a, speed: 6, size: 0.22, life: 0.45 });
 		flashLight(e.pos, 0xff4fd8, 30, 0.15);
 		const ex = e.pos.clone();
+		if (m.conflictMul > 1) ring({ x: ex.x, z: ex.z, r0: r * 0.3, r1: r * 1.25, color: 0x7dff9a, dur: 0.4, intensity: 2 });
 		for (const o of aliveEnemies()) {
-			if (Math.hypot(o.pos.x - ex.x, o.pos.z - ex.z) <= r + o.radius) hitEnemy(o, dmg, { source: 'element', knock: 3, dir: { x: o.pos.x - ex.x, z: o.pos.z - ex.z }, numColor: EL.conflict.css });
+			if (Math.hypot(o.pos.x - ex.x, o.pos.z - ex.z) > r + o.radius) continue;
+			const frozen = m.frozenBranch && o.frozen > 0;
+			hitEnemy(o, dmg * (frozen ? 2 : 1), { source: 'element', knock: 3, dir: { x: o.pos.x - ex.x, z: o.pos.z - ex.z }, numColor: frozen ? '#bff4ff' : EL.conflict.css });
+			if (m.flameWar && o.alive) applyBurn(o, 10 * m.burnMul, 3);
+			if (m.frozenBranch && o.alive) addChill(o, 3);
 		}
+		if (m.flameWar) {
+			for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; fireTrail(ex.x + Math.cos(a) * r * 0.6, ex.z + Math.sin(a) * r * 0.6, 8); }
+			burst({ x: ex.x, z: ex.z, y: 0.5, count: 24, color: 0xff7a2f, color2: 0xff4fd8, speed: 5, up: 4, size: 0.3, life: 0.6, gravity: 1 });
+		}
+		if (m.frozenBranch) burst({ x: ex.x, z: ex.z, y: 0.6, count: 20, color: 0xbff4ff, color2: 0xff4fd8, speed: 5, size: 0.2, life: 0.5, gravity: -2 });
+		if (m.mergeStorm) zap(ex.x, ex.z, 15, 3);
 	}
+}
+
+// Lightning strike with Duo modifiers (Hot Patch, Superconductor) applied.
+function arcStrike(target, dmg, from) {
+	const m = G.player.mods;
+	let d = dmg * m.arcMul;
+	let crit = false;
+	if (m.hotPatch && target.status.burn) d *= 1.5;
+	if (m.superconductor && target.status.chill > 0) { d *= 2; crit = true; }
+	const width = 0.14 + m.chains * 0.03 + (crit ? 0.06 : 0);
+	lightning(from, target.pos, { color: m.hotPatch ? 0xffb347 : crit ? 0xbff4ff : 0xffe066, width });
+	if (m.chains > 0) lightning(from, target.pos, { color: 0xffffff, width: width * 0.4, jag: 0.8 });
+	hitEnemy(target, d, { source: 'element', knock: 1.2, numColor: crit ? '#bff4ff' : EL.arc.css, color: 0xffe066 });
+	if (crit) critFlash(target.pos.x, target.height * 0.7, target.pos.z, 0xbff4ff);
+	if (m.hotPatch && target.alive) applyBurn(target, 8 * m.burnMul, 2.5);
 }
 
 export function chainLightning(from, dmg, count) {
 	const m = G.player.mods;
+	if (m.superconductor) count += 2;
 	let prev = from;
 	const hit = new Set([from]);
 	audio.play('zap');
 	for (let i = 0; i < count; i++) {
 		const next = aliveEnemies().filter((e) => !hit.has(e) && !e.invuln).sort((a, b) => a.pos.distanceTo(prev.pos) - b.pos.distanceTo(prev.pos))[0];
 		if (!next || next.pos.distanceTo(prev.pos) > 7) break;
-		lightning(prev.pos, next.pos, { color: 0xffe066 });
-		hitEnemy(next, dmg * m.arcMul, { source: 'element', knock: 1, numColor: EL.arc.css, color: 0xffe066 });
+		arcStrike(next, dmg, prev.pos);
 		hit.add(next);
 		prev = next;
 	}
 }
 
 export function zap(x, z, dmg, n) {
-	const targets = nearestEnemies(x, z, n, 8);
+	const targets = nearestEnemies(x, z, n + (G.player.mods.superconductor ? 1 : 0), 8);
 	if (targets.length) audio.play('zap');
-	for (const t of targets) {
-		lightning({ x, z }, t.pos, { color: 0xffe066 });
-		hitEnemy(t, dmg * G.player.mods.arcMul, { source: 'element', knock: 1.5, numColor: EL.arc.css, color: 0xffe066 });
-	}
+	for (const t of targets) arcStrike(t, dmg, { x, z });
 }
 
 export function explodeAt(x, z, r, dmg, { color = 0xff7a2f, hurtsPlayer = false, playerDmg = 0, hurtsEnemies = true, source = 'element', el = null, pow = 0, shake = 0.3 } = {}) {
@@ -156,6 +207,11 @@ export function explodeAt(x, z, r, dmg, { color = 0xff7a2f, hurtsPlayer = false,
 	flashLight({ x, z }, color, 60, 0.2, r * 4);
 	addTrauma(shake);
 	audio.play('explode', { vol: 0.8 });
+	scorch(x, z, r * 0.9, color);
+	floorRipple(x, z, Math.min(1.6, 0.5 + r * 0.25));
+	impact(x, z, { y: 0.5, color, color2: 0xffffff, spread: Math.PI * 2, power: Math.min(2, r * 0.5), chunk: r > 2 ? 4 : 0 });
+	if (r >= 2.4) shockwave({ x, y: 0.4, z }, Math.min(1.4, r * 0.3));
+	smashBreakables(x, z, r);
 	if (hurtsEnemies) {
 		for (const e of aliveEnemies()) {
 			if (Math.hypot(e.pos.x - x, e.pos.z - z) <= r + e.radius) {
@@ -196,17 +252,33 @@ export class Projectile {
 			const na = cur + Math.max(-this.homing * dt, Math.min(this.homing * dt, angleDiff(cur, want)));
 			this.vel.set(Math.cos(na) * sp, 0, Math.sin(na) * sp);
 		}
+		if (this.returning) {
+			const P = G.player;
+			const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+			const sp = Math.max(16, Math.hypot(this.vel.x, this.vel.z));
+			this.vel.set(dx / (d || 1) * sp, 0, dz / (d || 1) * sp);
+			if (d < 0.8) return this.kill();
+		}
 		this.pos.x += this.vel.x * dt;
 		this.pos.z += this.vel.z * dt;
 		this.mesh.position.copy(this.pos);
 		if (this.spin) this.mesh.rotation.y += this.spin * dt;
+		this.onTick?.(dt, this);
 		if (this.trail && Math.random() < 0.9) burst({ x: this.pos.x, z: this.pos.z, y: this.pos.y, count: 1, color: this.trail, speed: 0.3, up: 0, upVar: 0.2, size: this.owner === 'player' ? 0.3 : 0.35, sizeEnd: 0, life: 0.25, gravity: 0 });
 		const room = G.room;
-		if (this.life <= 0 || (room && !room.walkable(this.pos.x, this.pos.z))) {
+		if (this.boomerang && !this.returning && this.life <= 0) {
+			this.returning = true;
+			this.life = 1.4;
+			this.hit.clear();
+			this.pierce = 99;
+			ring({ x: this.pos.x, z: this.pos.z, y: this.pos.y, r1: 1, color: this.trail || 0xffffff, dur: 0.2 });
+		}
+		if (this.life <= 0 || (!this.returning && room && !room.walkable(this.pos.x, this.pos.z))) {
 			if (room && !room.walkable(this.pos.x, this.pos.z) && this.pos.y > 0) burst({ x: this.pos.x, z: this.pos.z, y: this.pos.y, count: 6, color: this.trail || 0xffffff, speed: 3, size: 0.18, life: 0.3 });
 			return this.kill();
 		}
 		if (this.owner === 'player') {
+			if (smashBreakables(this.pos.x, this.pos.z, this.r) && !this.returning) return this.kill();
 			for (const e of G.enemies) {
 				if (!e.alive || !e.active || this.hit.has(e)) continue;
 				if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) < e.radius + this.r) {
@@ -231,7 +303,10 @@ export class Projectile {
 		this.alive = false;
 		if (this.onEnd) this.onEnd(this);
 		G.scene.remove(this.mesh);
-		this.mesh.traverse((o) => { if (o.material && !o.material.userData.shared) o.material.dispose(); });
+		this.mesh.traverse((o) => {
+			if (o.material && !o.material.userData.shared) o.material.dispose();
+			if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+		});
 	}
 }
 
@@ -251,15 +326,59 @@ export function enemyOrb(x, z, angle, speed, dmg, color = 0xff3366, opts = {}) {
 	return new Projectile({ x, z, y: opts.y ?? 0.9, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, dmg, r: 0.26 * s, owner: 'enemy', mesh: g, trail: color, life: opts.life ?? 4, homing: opts.homing ?? 0 });
 }
 
+// Builds a star whose shape and trail reflect the Special's element.
+function starVisual(el, scale, angle) {
+	const holder = new THREE.Group();
+	let trail = 0xffcd0f, spin = 18, onTick = null;
+	if (el === 'chill') {
+		const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.32 * scale, 0), new THREE.MeshPhysicalMaterial({ color: 0xbff4ff, emissive: 0x3fb8e0, emissiveIntensity: 1.2, roughness: 0.05, metalness: 0.1, flatShading: true, clearcoat: 1 }));
+		shard.scale.set(0.7, 0.7, 2.4);
+		const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.14 * scale, 0), glowMat(0xffffff, 2.4));
+		holder.add(shard, tip);
+		holder.rotation.y = -angle + Math.PI / 2;
+		trail = 0x7fe6ff; spin = 0;
+		onTick = (dt, p) => { shard.rotation.z += dt * 14; if (Math.random() < 0.5) burst({ x: p.pos.x, z: p.pos.z, y: p.pos.y, count: 1, color: 0xffffff, speed: 0.5, up: -0.5, size: 0.1, life: 0.5, gravity: -3 }); };
+	} else {
+		const color = el === 'burn' ? 0xff8a3d : el === 'arc' ? 0xfff07a : 0xffcd0f;
+		const star = starMesh(0.9 * scale, color, el ? 1.6 : 1.1);
+		star.rotation.x = -Math.PI / 2.6;
+		holder.add(star);
+		if (el === 'burn') {
+			const core = new THREE.Mesh(new THREE.SphereGeometry(0.28 * scale, 12, 8), glowMat(0xffd166, 3, { transparent: true, additive: true, opacity: 0.8 }));
+			holder.add(core);
+			trail = 0xff7a2f;
+			onTick = (dt, p) => { if (Math.random() < 0.9) burst({ x: p.pos.x, z: p.pos.z, y: p.pos.y, count: 2, color: 0xff7a2f, color2: 0xffd166, speed: 0.6, up: 1.8, size: 0.32 * scale, life: 0.35, gravity: 1 }); };
+		} else if (el === 'arc') {
+			trail = 0xffe066;
+			let t = 0;
+			onTick = (dt, p) => {
+				t -= dt;
+				if (t > 0) return;
+				t = 0.05;
+				const a = rand(0, Math.PI * 2), r = rand(0.5, 1.1) * scale;
+				lightning({ x: p.pos.x, z: p.pos.z }, { x: p.pos.x + Math.cos(a) * r, z: p.pos.z + Math.sin(a) * r }, { color: 0xffe066, width: 0.04, dur: 0.06, y: p.pos.y, jag: 0.2 });
+			};
+		} else if (el === 'conflict') {
+			holder.remove(star);
+			const a1 = starMesh(0.6 * scale, 0xff4fd8, 1.6), a2 = starMesh(0.6 * scale, 0x7dff9a, 1.6);
+			a1.rotation.x = a2.rotation.x = -Math.PI / 2.6;
+			holder.add(a1, a2);
+			trail = 0xff4fd8; spin = 0;
+			let ph = 0;
+			onTick = (dt) => { ph += dt * 26; a1.position.set(Math.cos(ph) * 0.3, 0, Math.sin(ph) * 0.3); a2.position.set(-Math.cos(ph) * 0.3, 0, -Math.sin(ph) * 0.3); a1.rotation.y += dt * 18; a2.rotation.y -= dt * 18; };
+		}
+	}
+	return { holder, trail, spin, onTick };
+}
+
 export function playerStar(x, z, angle, { speed = 19, dmg = 16, scale = 1, life = 0.7, source = 'special' } = {}) {
 	const P = G.player;
 	const m = P.mods;
-	const mesh = starMesh(0.9 * scale, 0xffcd0f, 1.1);
-	mesh.rotation.x = -Math.PI / 2.6;
-	const holder = new THREE.Group();
-	holder.add(mesh);
+	const tier = Math.max(0, slotTier(P, 'special'));
+	const vis = starVisual(m.specialEl, scale * (1 + tier * 0.1), angle);
 	return new Projectile({
-		x, z, y: 0.8, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, dmg, r: 0.45 * scale, owner: 'player', mesh: holder, trail: 0xffcd0f, life, pierce: 1 + m.starPierce, spin: 18,
+		x, z, y: 0.8, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, dmg, r: 0.45 * scale, owner: 'player', mesh: vis.holder, trail: vis.trail, life, pierce: 1 + m.starPierce, spin: vis.spin, onTick: vis.onTick,
+		boomerang: P.patches?.has('boomerang'),
 		onHit: (e, pr) => {
 			hitEnemy(e, pr.dmg, { source, knock: 3.5, dir: { x: pr.vel.x, z: pr.vel.z }, color: 0xffe066, hitstop: 0.03 });
 			if (m.specialEl === 'burn' && m.flareStar) explodeAt(pr.pos.x, pr.pos.z, 1.8, m.flareStar, { color: 0xff7a2f, source: 'element', el: 'burn', pow: m.specialPow, shake: 0.12 });
@@ -330,6 +449,7 @@ export function castBreakpoint(x, z, omega = false) {
 	burst({ x, z, count: 30, color, radius: r * 0.6, speed: 1.2, up: 3, size: 0.2, life: 0.7, gravity: -1 });
 	flashLight({ x, z }, color, 25, 0.25, r * 3);
 	addTrauma(0.12);
+	G.boss?.onCast?.(x, z, r);
 	const dur = omega ? 3.5 : 2.6;
 	const inside = (e) => Math.hypot(e.pos.x - x, e.pos.z - z) <= r + e.radius * 0.5;
 	for (const e of aliveEnemies()) {

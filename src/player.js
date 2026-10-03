@@ -6,19 +6,20 @@ import { createBuddy, createHat, heartMesh, sunglassesMesh, starMesh } from './m
 import { setFlash, glowMat } from './materials.js';
 import { glyphTexture } from './textures.js';
 import { burst, dust, ring, slash, ghost, damageNumber, addTransient } from './fx.js';
-import { addTrauma, flashScreen, aberrate, punchZoom, aimPoint, flashLight } from './render.js';
-import { moveCircle } from './world.js';
+import { addTrauma, flashScreen, aberrate, punchZoom, aimPoint, flashLight, shockwave } from './render.js';
+import { sparks, floorRipple, rumble } from './juice.js';
+import { moveCircle, smashBreakables } from './world.js';
 import { hitEnemy, aliveEnemies, playerStar, castBreakpoint, fireTrail, zap, addChill, addConflict, explodeAt, EL } from './combat.js';
 import { baseMods, BOON_BY_ID, boonPower, RARITY } from './boons.js';
+import { applyConfigMods, rank } from './meta.js';
 import { clamp, damp, angleDiff, rand, easeOutBack } from './util.js';
+import { WEAPONS, createWeaponModel, animateWeapon } from './weapons.js';
+import { attackVisual, elementImpact, critFlash, EL_COLOR, slotTier, thrust } from './vfx.js';
+import { Projectile, Hazard, zoneMesh } from './combat.js';
+import { track } from './meta.js';
 
-const COMBO = [
-	{ arc: 2.5, range: 2.35, dmg: 12, dur: 0.23, hitAt: 0.055, lunge: 3.2, dir: 1, knock: 4, sfx: 'swing' },
-	{ arc: 2.5, range: 2.35, dmg: 12, dur: 0.23, hitAt: 0.055, lunge: 3.2, dir: -1, knock: 4, sfx: 'swing' },
-	{ arc: 3.6, range: 2.9, dmg: 24, dur: 0.36, hitAt: 0.1, lunge: 7, dir: 1, knock: 9, big: true, sfx: 'swing3' },
-];
-const DASH_STRIKE = { arc: 1.9, range: 2.8, dmg: 20, dur: 0.26, hitAt: 0.05, lunge: 9, dir: 1, knock: 7, big: true, sfx: 'swing3' };
 const OMEGA_COST = 30;
+const OMEGA_STATES = new Set(['spin', 'skewer', 'flurry']);
 const _v = new THREE.Vector3();
 
 export class Player {
@@ -56,6 +57,30 @@ export class Player {
 		this.pos = this.root.position;
 		this.hat = null;
 		this.setHat(G.save.hat);
+		this.setWeapon(G.save.weapon || 'caret');
+	}
+
+	setWeapon(id) {
+		if (!WEAPONS[id]) id = 'caret';
+		this.weaponId = id;
+		this.weapon = WEAPONS[id];
+		const M = this.model;
+		if (M.caret) this.root.remove(M.caret);
+		M.caret = createWeaponModel(id);
+		this.root.add(M.caret);
+		this.comboStep = 0;
+	}
+
+	// Combo step with active Patch modifiers applied.
+	swingDef(base) {
+		const p = this.patches || new Set();
+		const sw = { ...base };
+		if (p.has('overclock')) { sw.dur *= 0.78; sw.hitAt *= 0.78; }
+		if (p.has('wide_select') && this.weaponId === 'caret') { sw.arc *= 1.35; sw.range *= 1.2; }
+		if (p.has('long_line') && this.weaponId === 'lance') sw.range *= 1.35;
+		if (sw.shock && p.has('ctrl_combo')) { sw.shock *= 1.6; sw.shockMul = 1.5; }
+		sw.base = base;
+		return sw;
 	}
 
 	setVariant(v) {
@@ -76,10 +101,11 @@ export class Player {
 
 	resetForRun() {
 		this.boons = { attack: null, special: null, cast: null, dash: null, passives: [] };
+		this.patches = new Set();
 		const u = G.save.unlocks;
 		this.baseMaxHp = 60 + (u.includes('wildwest') ? 15 : 0);
 		this.baseMaxMp = 80 + (u.includes('citizen') ? 25 : 0);
-		this.respawns = (u.includes('cook') ? 1 : 0) + (u.includes('draft') ? 1 : 0);
+		this.respawns = (u.includes('cook') ? 1 : 0) + (u.includes('draft') ? 1 : 0) + rank('autoStash');
 		this.recompute();
 		this.hp = this.maxHp;
 		this.mp = this.maxMp;
@@ -104,6 +130,7 @@ export class Player {
 		if (u.includes('shipit')) m.dmgMul += 0.1;
 		if (u.includes('citizen')) m.mpRegenMul += 0.3;
 		if (u.includes('course')) m.dashChargesAdd += 1;
+		applyConfigMods(m, G.save);
 		for (const b of this.boonList()) {
 			const def = BOON_BY_ID[b.id];
 			def.apply(m, boonPower(b));
@@ -133,7 +160,7 @@ export class Player {
 	}
 
 	levelUpRandom() {
-		const list = this.boonList();
+		const list = this.boonList().filter((b) => b.rarity !== 'duo');
 		if (!list.length) return null;
 		const b = list[Math.floor(Math.random() * list.length)];
 		b.level++;
@@ -209,6 +236,8 @@ export class Player {
 			case 'attack': this.updateSwing(dt, mv); vx = this.vel.x; vz = this.vel.z; break;
 			case 'dash': this.updateDash(dt); vx = this.vel.x; vz = this.vel.z; break;
 			case 'spin': this.updateSpin(dt, mv); vx = mv.x * speed * 0.35; vz = mv.z * speed * 0.35; break;
+			case 'skewer': this.updateSkewer(dt); vx = this.vel.x; vz = this.vel.z; break;
+			case 'flurry': this.updateFlurry(dt); vx = mv.x * speed * 0.25; vz = mv.z * speed * 0.25; break;
 			case 'throw':
 				vx = mv.x * speed * 0.4; vz = mv.z * speed * 0.4;
 				this.face += clamp(angleDiff(this.face, this.aimAngle), -30 * dt, 30 * dt);
@@ -224,8 +253,8 @@ export class Player {
 		this.push.set(0, 0, 0);
 		const prevX = this.vel.x, prevZ = this.vel.z;
 		moveCircle(G.room, this.pos, vx * dt, vz * dt, this.radius * 0.8);
-		if (this.state === 'attack' || this.state === 'dash') {
-			const d = Math.exp(-(this.state === 'dash' ? 0 : 14) * dt);
+		if (this.state === 'attack' || this.state === 'dash' || this.state === 'skewer') {
+			const d = Math.exp(-(this.state === 'attack' ? 14 : 0) * dt);
 			this.vel.x *= d; this.vel.z *= d;
 		} else { this.vel.set(vx, 0, vz); }
 		this.accel = { x: (this.vel.x - prevX) / Math.max(dt, 0.001), z: (this.vel.z - prevZ) / Math.max(dt, 0.001) };
@@ -235,17 +264,18 @@ export class Player {
 
 	handleActions(dt, mv, moving) {
 		// dash (cancels most things)
-		if (input.pressed('dash') && this.dashCharges > 0 && this.state !== 'spin') {
+		if (input.pressed('dash') && this.dashCharges > 0 && !OMEGA_STATES.has(this.state)) {
 			this.startDash(moving ? Math.atan2(mv.z, mv.x) : this.face);
 			return;
 		}
 		// attack
 		if (input.held('attack')) this.attackHeld += dt; else this.attackHeld = 0;
 		if (input.pressed('attack')) {
-			if (this.state === 'dash' || (this.state === 'idle' && this.sinceDash < 0.12)) { this.startSwing(DASH_STRIKE, true); return; }
-			if (this.state === 'sprint') { this.startSwing(DASH_STRIKE, true); return; }
+			const W = this.weapon;
+			if (this.state === 'dash' || (this.state === 'idle' && this.sinceDash < 0.12)) { this.startSwing(W.dash, true); return; }
+			if (this.state === 'sprint') { this.startSwing(W.dash, true); return; }
 			if (this.state === 'attack') this.queued = true;
-			else if (this.state === 'idle' || this.state === 'throw') this.startSwing(COMBO[this.comboWindow > 0 ? this.comboStep : 0]);
+			else if (this.state === 'idle' || this.state === 'throw') this.startSwing(W.combo[this.comboWindow > 0 ? this.comboStep : 0]);
 		}
 		// omega attack charge
 		if (this.state === 'idle' && input.held('attack') && this.attackHeld > 0.3) { this.state = 'charge'; this.chargeKind = 'attack'; this.charge = 0; this.stateT = 0; }
@@ -253,7 +283,7 @@ export class Player {
 			this.charge += dt;
 			this.chargeFx(dt);
 			if (!input.held('attack')) {
-				if (this.charge >= 0.4 && this.mp >= OMEGA_COST) this.startSpin();
+				if (this.charge >= 0.4 && this.mp >= OMEGA_COST) this.startOmega();
 				else { this.state = 'idle'; if (this.charge >= 0.4) this.noMagick(); }
 			}
 		}
@@ -270,7 +300,7 @@ export class Player {
 			}
 		}
 		// cast
-		if (input.pressed('cast') && this.state !== 'spin') {
+		if (input.pressed('cast') && !OMEGA_STATES.has(this.state)) {
 			if (this.castCharges > 0) this.cast();
 			else { damageNumber(this.pos.x, 1.6, this.pos.z, 0, { text: 'recharging…', color: '#aaa' }); audio.play('ui', { pitch: 0.5 }); }
 		}
@@ -300,7 +330,8 @@ export class Player {
 		if (k < 1) this.chargeReady = false;
 	}
 
-	startSwing(sw, dashStrike = false) {
+	startSwing(base, dashStrike = false) {
+		const sw = this.swingDef(base);
 		this.state = 'attack';
 		this.stateT = 0;
 		this.swing = sw;
@@ -309,11 +340,11 @@ export class Player {
 		this.queued = false;
 		this.face = this.aimAngle;
 		this.vel.x = this.aim.x * sw.lunge; this.vel.z = this.aim.z * sw.lunge;
-		if (!dashStrike) this.comboStep = (COMBO.indexOf(sw) + 1) % COMBO.length;
+		const combo = this.weapon.combo;
+		if (!dashStrike) this.comboStep = (combo.indexOf(base) + 1) % combo.length;
 		this.isDashStrike = dashStrike;
-		const col = this.mods.attackEl ? EL[this.mods.attackEl].color : this.model.colors.glow;
-		slash({ x: this.pos.x, z: this.pos.z, angle: this.face, arc: sw.arc, r1: sw.range + 0.2, color: col, dur: sw.dur * 0.95, dirSign: sw.dir, intensity: sw.big ? 2 : 1.5 });
-		audio.play(sw.sfx);
+		attackVisual(this, sw, this.face);
+		audio.play(sw.sfx, { pitch: sw.style === 'punch' ? 1.3 + Math.random() * 0.2 : sw.style === 'thrust' ? 0.85 : undefined });
 		this.sqV += sw.big ? 5 : 3;
 		this.antennaKick(sw.dir * 6);
 	}
@@ -323,20 +354,13 @@ export class Player {
 		const sw = this.swing;
 		if (!this.hitDone && this.swingT >= sw.hitAt) {
 			this.hitDone = true;
-			let hits = 0;
-			for (const e of aliveEnemies()) {
-				const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
-				const d = Math.hypot(dx, dz);
-				if (d > sw.range + e.radius) continue;
-				const ad = Math.abs(angleDiff(this.face, Math.atan2(dz, dx)));
-				if (ad > sw.arc / 2 + Math.atan2(e.radius, Math.max(d, 0.1)) && d > e.radius + 0.4) continue;
-				hitEnemy(e, sw.dmg, { source: 'attack', knock: sw.knock, dir: { x: dx, z: dz }, hitstop: sw.big ? 0.075 : 0.045, shake: sw.big ? 0.2 : 0.1 });
-				hits++;
-			}
+			const hits = this.hitArc(this.face, sw);
 			if (hits && sw.big) punchZoom(0.03);
+			smashBreakables(this.pos.x, this.pos.z, sw.range, { angle: this.face, arc: sw.arc });
+			this.finisherExtras(sw);
 		}
 		if (this.queued && this.swingT > sw.dur * 0.6 && !this.isDashStrike) {
-			this.startSwing(COMBO[this.comboStep]);
+			this.startSwing(this.weapon.combo[this.comboStep]);
 			return;
 		}
 		if (this.swingT >= sw.dur) {
@@ -345,6 +369,143 @@ export class Player {
 			this.comboWindow = 0.35;
 			if (this.isDashStrike) this.comboStep = 0;
 		}
+	}
+
+	// Hit everything inside an arc (or a thin line for thrusts) in front of Buddy.
+	hitArc(angle, sw, dmgMul = 1, exclude = null) {
+		let hits = 0;
+		this.lastHits = new Set();
+		const one2 = this.patches?.has('one_two') && sw.style === 'punch';
+		for (const e of aliveEnemies()) {
+			const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+			const d = Math.hypot(dx, dz);
+			if (d > sw.range + e.radius) continue;
+			const ad = Math.abs(angleDiff(angle, Math.atan2(dz, dx)));
+			if (ad > sw.arc / 2 + Math.atan2(e.radius, Math.max(d, 0.1)) && d > e.radius + 0.4) continue;
+			if (exclude?.has(e)) continue;
+			exclude?.add(e);
+			this.lastHits.add(e);
+			hitEnemy(e, sw.dmg * dmgMul, { source: 'attack', knock: sw.knock, dir: { x: dx, z: dz }, hitstop: sw.big ? 0.075 : 0.045, shake: sw.big ? 0.2 : 0.1 });
+			if (one2 && e.alive && Math.random() < 0.3) {
+				hitEnemy(e, sw.dmg * 0.7, { source: 'attack', knock: 1, dir: { x: dx, z: dz }, hitstop: 0.02, shake: 0.05, color: 0x7dffb0 });
+				sparks({ x: e.pos.x, y: e.height * 0.6, z: e.pos.z, count: 6, speed: 10, dir: Math.atan2(dz, dx), spread: 1, color: 0x7dffb0, life: 0.15 });
+			}
+			hits++;
+		}
+		return hits;
+	}
+
+	finisherExtras(sw) {
+		const p = this.patches || new Set();
+		const col = this.mods.attackEl ? EL_COLOR[this.mods.attackEl] : this.weapon.color;
+		if (sw.shock) {
+			const fx = this.pos.x + Math.cos(this.face) * 1.4, fz = this.pos.z + Math.sin(this.face) * 1.4;
+			explodeAt(fx, fz, sw.shock, 18 * (sw.shockMul || 1), { color: col, source: 'attack', shake: 0.35 });
+			shockwave({ x: fx, y: 0.5, z: fz }, 0.8);
+			rumble(0.6, 0.8, 160);
+		}
+		if (!sw.finisher) return;
+		if (p.has('multi_cursor') && this.weaponId === 'caret') {
+			const already = new Set(this.lastHits || []);
+			for (const off of [-1.1, 1.1]) {
+				const a = this.face + off;
+				slash({ x: this.pos.x, z: this.pos.z, angle: a, arc: sw.arc * 0.6, r1: sw.range * 0.9, color: 0xbfeaff, core: 0xffffff, dur: sw.dur, dirSign: -sw.dir, intensity: 1.3 });
+				this.hitArc(a, { ...sw, arc: sw.arc * 0.6, range: sw.range * 0.9 }, 0.6, already);
+			}
+		}
+		if (p.has('fling') && this.weaponId === 'lance') {
+			const mesh = new THREE.Group();
+			const bolt = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.2, 4).rotateZ(-Math.PI / 2), glowMat(col, 3));
+			mesh.add(bolt);
+			mesh.rotation.y = -this.face;
+			new Projectile({
+				x: this.pos.x, z: this.pos.z, y: 0.7, vx: Math.cos(this.face) * 26, vz: Math.sin(this.face) * 26, dmg: 26, r: 0.5, owner: 'player', mesh, trail: col, life: 0.6, pierce: 99,
+				onHit: (e, pr) => hitEnemy(e, pr.dmg, { source: 'attack', knock: 5, dir: { x: pr.vel.x, z: pr.vel.z }, hitstop: 0.03 }),
+			});
+		}
+	}
+
+	startOmega() {
+		const kind = this.weapon.omega;
+		if (kind === 'skewer') return this.startSkewer();
+		if (kind === 'flurry') return this.startFlurry();
+		return this.startSpin();
+	}
+
+	startSkewer() {
+		this.mp -= OMEGA_COST;
+		this.state = 'skewer'; this.stateT = 0;
+		this.face = this.aimAngle;
+		this.vel.set(Math.cos(this.face) * 30, 0, Math.sin(this.face) * 30);
+		this.iframes = Math.max(this.iframes, 0.4);
+		this.skewerHit = new Set();
+		this.skewerStart = { x: this.pos.x, z: this.pos.z };
+		audio.play('spin', { pitch: 1.4 });
+		audio.play('dash', { pitch: 0.7 });
+		flashLight(this.pos, this.weapon.color, 30, 0.3);
+		this.sqV += 6;
+	}
+
+	updateSkewer(dt) {
+		const col = this.mods.attackEl ? EL_COLOR[this.mods.attackEl] : this.weapon.color;
+		if (Math.random() < 0.8) ghost(this.model.body, col, 0.2, 0.35);
+		for (const e of aliveEnemies()) {
+			if (this.skewerHit.has(e)) continue;
+			if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) < e.radius + 1.2) {
+				this.skewerHit.add(e);
+				const side = Math.sign(-(e.pos.x - this.pos.x) * Math.sin(this.face) + (e.pos.z - this.pos.z) * Math.cos(this.face)) || 1;
+				hitEnemy(e, 34, { source: 'omega', knock: 7, dir: { x: -Math.sin(this.face) * side, z: Math.cos(this.face) * side }, hitstop: 0.05, shake: 0.2 });
+			}
+		}
+		smashBreakables(this.pos.x, this.pos.z, 1.2);
+		if (this.stateT > 0.26) {
+			const len = Math.hypot(this.pos.x - this.skewerStart.x, this.pos.z - this.skewerStart.z);
+			thrust(this.skewerStart.x, this.skewerStart.z, this.face, len, col, 0xffffff, 0.4, 1.6, true);
+			ring({ x: this.pos.x, z: this.pos.z, r1: 2.4, color: col, dur: 0.3 });
+			shockwave({ x: this.pos.x, y: 0.6, z: this.pos.z }, 0.6);
+			floorRipple(this.pos.x, this.pos.z, 0.7);
+			this.vel.multiplyScalar(0.1);
+			this.state = 'idle'; this.stateT = 0;
+		}
+	}
+
+	startFlurry() {
+		this.mp -= OMEGA_COST;
+		this.state = 'flurry'; this.stateT = 0;
+		this.flurryT = 0; this.flurryN = 0; this.flurryDone = false;
+		this.face = this.aimAngle;
+		audio.play('spin', { pitch: 1.8 });
+		this.sqV += 5;
+	}
+
+	updateFlurry(dt) {
+		this.face += clamp(angleDiff(this.face, this.aimAngle), -10 * dt, 10 * dt);
+		const col = this.mods.attackEl ? EL_COLOR[this.mods.attackEl] : this.weapon.color;
+		this.flurryT -= dt;
+		if (this.flurryT <= 0 && this.stateT < 0.8) {
+			this.flurryT = 0.065;
+			this.flurryN++;
+			const a = this.face + rand(-0.45, 0.45);
+			const r = rand(1.2, 2.5);
+			const px = this.pos.x + Math.cos(a) * r, pz = this.pos.z + Math.sin(a) * r;
+			ring({ x: px, z: pz, y: 0.6, r0: 0.1, r1: 0.7, color: col, dur: 0.1, intensity: 2.2 });
+			sparks({ x: this.pos.x, y: 0.6, z: this.pos.z, count: 3, speed: 15, dir: a, spread: 0.2, color: col, color2: 0xffffff, life: 0.1, gravity: 0 });
+			for (const e of aliveEnemies()) {
+				if (Math.hypot(e.pos.x - px, e.pos.z - pz) < 1.0 + e.radius) hitEnemy(e, 6, { source: 'omega', knock: 1, dir: { x: Math.cos(a), z: Math.sin(a) }, hitstop: 0.012, shake: 0.04, vol: 0.5 });
+			}
+			audio.play('swing', { pitch: 1.4 + Math.random() * 0.4, vol: 0.5 });
+			this.sqV += 1.5;
+		}
+		if (this.stateT >= 0.85 && !this.flurryDone) {
+			this.flurryDone = true;
+			const fx = this.pos.x + Math.cos(this.face) * 1.2, fz = this.pos.z + Math.sin(this.face) * 1.2;
+			explodeAt(fx, fz, 3.6, 30, { color: col, source: 'omega', shake: 0.5 });
+			shockwave({ x: fx, y: 0.5, z: fz }, 1.2);
+			rumble(0.8, 0.9, 260);
+			punchZoom(0.05);
+			this.sqV -= 8;
+		}
+		if (this.stateT > 1.0) { this.state = 'idle'; this.stateT = 0; this.flurryDone = false; }
 	}
 
 	startSpin() {
@@ -367,6 +528,9 @@ export class Player {
 				const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z);
 				if (d < 3.5 + e.radius) hitEnemy(e, 16, { source: 'omega', knock: this.spinHits === 3 ? 10 : 3, hitstop: 0.05, shake: 0.18 });
 			}
+			smashBreakables(this.pos.x, this.pos.z, 3.5);
+			floorRipple(this.pos.x, this.pos.z, 0.5);
+			if (this.spinHits === 3) shockwave({ x: this.pos.x, y: 0.6, z: this.pos.z }, 0.7);
 			audio.play('swing', { pitch: 0.8 + this.spinHits * 0.15 });
 		}
 		if (t > 0.55) { this.state = 'idle'; this.stateT = 0; }
@@ -376,11 +540,14 @@ export class Player {
 		this.state = 'throw'; this.stateT = 0;
 		this.face = this.aimAngle;
 		this.specialCd = 0.42;
-		playerStar(this.pos.x + this.aim.x * 0.6, this.pos.z + this.aim.z * 0.6, this.aimAngle, { dmg: 16 });
+		if (this.patches?.has('triple_star')) {
+			for (const off of [-0.22, 0, 0.22]) playerStar(this.pos.x + this.aim.x * 0.6, this.pos.z + this.aim.z * 0.6, this.aimAngle + off, { dmg: 16 * 0.7 });
+		} else playerStar(this.pos.x + this.aim.x * 0.6, this.pos.z + this.aim.z * 0.6, this.aimAngle, { dmg: 16 });
 		audio.play('star');
 		this.sqV += 3;
 		this.antennaKick(-4);
-		burst({ x: this.pos.x + this.aim.x * 0.8, z: this.pos.z + this.aim.z * 0.8, y: 0.8, count: 8, color: 0xffcd0f, speed: 4, dir: this.aimAngle, spread: 1, size: 0.18, life: 0.25 });
+		const sc = this.mods.specialEl ? EL_COLOR[this.mods.specialEl] : 0xffcd0f;
+		burst({ x: this.pos.x + this.aim.x * 0.8, z: this.pos.z + this.aim.z * 0.8, y: 0.8, count: 8 + Math.max(0, slotTier(this, 'special')) * 4, color: sc, speed: 4, dir: this.aimAngle, spread: 1, size: 0.18, life: 0.25 });
 	}
 
 	starfall() {
@@ -394,6 +561,8 @@ export class Player {
 		}
 		ring({ x: this.pos.x, z: this.pos.z, r1: 4, color: 0xffcd0f, dur: 0.35, intensity: 2.5 });
 		flashLight(this.pos, 0xffcd0f, 40, 0.25);
+		shockwave({ x: this.pos.x, y: 0.7, z: this.pos.z }, 0.8);
+		floorRipple(this.pos.x, this.pos.z, 0.9);
 		audio.play('star', { pitch: 0.7 });
 		audio.play('unlock', { vol: 0.5 });
 		addTrauma(0.2);
@@ -408,7 +577,7 @@ export class Player {
 		if (G.room && !G.room.walkable(tx, tz)) { tx = this.pos.x; tz = this.pos.z; }
 		castBreakpoint(tx, tz, false);
 		this.castCharges = 0;
-		this.castCd = 6;
+		this.castCd = 6 * (1 - 0.15 * rank('breakpoints'));
 		this.sqV += 4;
 	}
 
@@ -426,14 +595,34 @@ export class Player {
 		this.dashHit = new Set();
 		audio.play('dash');
 		dust({ x: this.pos.x, z: this.pos.z, count: 6, speed: 2.5, dir: angle + Math.PI, spread: 1.4, radius: 0.2, color: 0x4a4058 });
+		sparks({ x: this.pos.x, y: 0.2, z: this.pos.z, count: 8, speed: 8, dir: angle + Math.PI, spread: 1.1, up: 1, color: this.model.colors.glow, color2: 0xffffff, life: 0.18, width: 0.05 });
+		floorRipple(this.pos.x, this.pos.z, 0.25);
+		rumble(0.08, 0.25, 60);
 		this.antennaKick(8);
 		const m = this.mods;
 		if (m.dashEl === 'arc') zap(this.pos.x, this.pos.z, m.dashPow, 2);
+		if (this.patches?.has('echo_dash')) this.dropEcho();
+	}
+
+	dropEcho() {
+		const x = this.pos.x, z = this.pos.z;
+		const col = this.mods.dashEl ? EL_COLOR[this.mods.dashEl] : this.model.colors.glow;
+		ghost(this.model.body, col, 0.55, 0.7);
+		const mesh = zoneMesh(2.1, col);
+		mesh.position.set(x, 0.05, z);
+		new Hazard({
+			mesh, dur: 0.5,
+			tick(dt, h) { mesh.userData.mat.uniforms.uA.value = 0.4 + h.t * 1.4; mesh.userData.mat.uniforms.uTime.value += dt * 6; },
+			end: () => {
+				explodeAt(x, z, 2.1, 22, { color: col, source: 'dash', el: this.mods.dashEl, pow: this.mods.dashPow, shake: 0.18 });
+			},
+		});
 	}
 
 	updateDash(dt) {
 		this.ghostT -= dt;
-		if (this.ghostT <= 0) { this.ghostT = 0.03; ghost(this.model.body, this.model.colors.glow, 0.25, 0.4); }
+		const dcol = this.mods.dashEl ? EL_COLOR[this.mods.dashEl] : this.model.colors.glow;
+		if (this.ghostT <= 0) { this.ghostT = 0.03; ghost(this.model.body, dcol, 0.25, 0.4 + Math.max(0, slotTier(this, 'dash')) * 0.08); }
 		const m = this.mods;
 		if (m.dashEl === 'burn') {
 			this.trailT -= dt;
@@ -483,6 +672,8 @@ export class Player {
 		moveCircle(G.room, this.pos, dx / d * 0.4, dz / d * 0.4, this.radius * 0.8);
 		G.hitstop = Math.max(G.hitstop, 0.09);
 		addTrauma(0.45);
+		rumble(0.85, 0.7, 220);
+		sparks({ x: this.pos.x, y: 0.7, z: this.pos.z, count: 14, speed: 11, color: 0xff3048, color2: 0xffffff, life: 0.28 });
 		flashScreen(0.18, 0xff2040);
 		aberrate(0.025);
 		audio.play('hurt');
@@ -623,37 +814,18 @@ export class Player {
 			a.position.y = damp(a.position.y, target, 14, dt);
 			a.position.x = damp(a.position.x, 0.63 * side * (this.state === 'charge' ? 1.1 : 1), 14, dt);
 		});
-		// caret weapon
+		// weapon
 		const cw = M.caret;
-		cw.rotation.order = 'YXZ';
-		if (this.state === 'attack') {
-			const k = clamp(this.swingT / (this.swing.dur * 0.55), 0, 1);
-			const e = 1 - Math.pow(1 - k, 3);
-			const th = this.swing.dir * (this.swing.arc / 2 - this.swing.arc * e);
-			const r = this.swing.range * 0.62;
-			cw.position.set(Math.sin(th) * r, 0.6, Math.cos(th) * r);
-			cw.rotation.set(Math.PI / 2, th, 0);
-		} else if (this.state === 'spin') {
-			const th = -this.stateT * Math.PI * 2 * 3.6;
-			cw.position.set(Math.sin(th) * 1.9, 0.6, Math.cos(th) * 1.9);
-			cw.rotation.set(Math.PI / 2, th, 0);
-		} else if (this.state === 'charge') {
-			cw.position.x = damp(cw.position.x, 0, 10, dt);
-			cw.position.y = damp(cw.position.y, 2.0, 10, dt);
-			cw.position.z = damp(cw.position.z, 0, 10, dt);
-			cw.rotation.set(0, cw.rotation.y + dt * 20, 0);
-		} else {
-			cw.position.x = damp(cw.position.x, 0.9, 12, dt);
-			cw.position.y = damp(cw.position.y, 0.95 + Math.sin(G.time * 2.2) * 0.1, 12, dt);
-			cw.position.z = damp(cw.position.z, -0.2, 12, dt);
-			cw.rotation.set(damp(cw.rotation.x, 0.15, 10, dt), cw.rotation.y + dt * 1.2, 0);
-		}
+		animateWeapon(this, cw, dt);
 		const cm = cw.userData.mat;
-		const glow = this.state === 'attack' || this.state === 'spin' ? 4 : 2.4 + Math.sin(G.time * 3) * 0.3;
-		const baseCol = this.mods.attackEl ? EL[this.mods.attackEl].color : 0xbfeaff;
+		const busy = this.state === 'attack' || OMEGA_STATES.has(this.state);
+		const tier = Math.max(0, slotTier(this, 'attack'));
+		const glow = (busy ? 4 : 2.4 + Math.sin(G.time * 3) * 0.3) * (1 + tier * 0.15);
+		const baseCol = this.mods.attackEl ? EL[this.mods.attackEl].color : this.weapon.color;
 		cm.color.set(baseCol).multiplyScalar(glow);
 		// light
-		M.light.intensity = damp(M.light.intensity, this.state === 'attack' || this.state === 'spin' ? 6 : 3.2, 10, dt);
+		M.light.intensity = damp(M.light.intensity, busy ? 6 : 3.2, 10, dt);
+		if (tier >= 3 && busy && Math.random() < dt * 30) burst({ x: this.pos.x + rand(-0.5, 0.5), z: this.pos.z + rand(-0.5, 0.5), y: 0.8, count: 1, color: 0xffe066, speed: 0.4, up: 1.6, size: 0.14, life: 0.5, gravity: 0 });
 		// flash / iframes
 		let fl = this.flashT;
 		if (this.iframes > 0 && this.flashT <= 0.05 && this.state !== 'dash') fl = 0.25 + 0.25 * Math.sin(G.time * 40);

@@ -1,5 +1,6 @@
 import { G } from './state.js';
 import { shuffle, weighted } from './util.js';
+import { rank } from './meta.js';
 
 export const KEEPERS = {
 	pyra: {
@@ -45,6 +46,7 @@ export const RARITY = {
 	rare: { name: 'Rare', mul: 1.35, css: '#4cc3ff' },
 	epic: { name: 'Epic', mul: 1.75, css: '#c77dff' },
 	heroic: { name: 'Heroic', mul: 2.2, css: '#ff5e7a' },
+	duo: { name: 'Duo', mul: 1, css: '#ffe066' },
 };
 
 const pct = (v) => Math.round(v * 100) + '%';
@@ -82,6 +84,13 @@ export const BOONS = [
 	{ id: 'rebase', keeper: 'mira', slot: 'cast', name: 'Rebase', desc: (k) => `Your <b>Breakpoint</b> pulls foes to its center and adds <i class="conflict">Conflict</i> every second. Deals <b>+${pct(0.5 * k)}</b> damage.`, apply: (m, k) => { m.castEl = 'conflict'; m.castMul += 0.5 * k; m.conflictPow = Math.max(m.conflictPow, 12 * k); } },
 	{ id: 'fast_forward', keeper: 'mira', slot: 'dash', name: 'Fast-Forward', desc: (k) => `Dashing through foes deals <b>${n(14 * k)}</b> and adds <i class="conflict">Conflict</i>.`, apply: (m, k) => { m.dashEl = 'conflict'; m.dashPow = 14 * k; m.conflictPow = Math.max(m.conflictPow, 12 * k); } },
 	{ id: 'squash', keeper: 'mira', slot: 'passive', name: 'Squash', desc: (k) => `<i class="conflict">Conflict</i> bursts deal <b>+${pct(0.5 * k)}</b> damage in a larger area.`, apply: (m, k) => { m.conflictMul += 0.5 * k; } },
+	// ---------------- DUO (two Keepers merge their powers) ----------------
+	{ id: 'thermal_shock', keeper: 'duo', keepers: ['pyra', 'glace'], slot: 'passive', name: 'Thermal Shock', desc: () => `Foes that are both <i class="burn">Burning</i> and <i class="chill">Chilled</i> erupt in steam for <b>34</b> area damage.`, apply: (m) => { m.thermalShock = 34; } },
+	{ id: 'hot_patch', keeper: 'duo', keepers: ['pyra', 'arc'], slot: 'passive', name: 'Hot Patch', desc: () => `<i class="arc">Lightning</i> inflicts <i class="burn">Burn</i> and deals <b>+50%</b> damage to Burning foes.`, apply: (m) => { m.hotPatch = true; } },
+	{ id: 'flame_war', keeper: 'duo', keepers: ['pyra', 'mira'], slot: 'passive', name: 'Flame War', desc: () => `<i class="conflict">Conflict</i> bursts inflict <i class="burn">Burn</i> and leave a ring of fire.`, apply: (m) => { m.flameWar = true; } },
+	{ id: 'superconductor', keeper: 'duo', keepers: ['glace', 'arc'], slot: 'passive', name: 'Superconductor', desc: () => `<i class="arc">Lightning</i> chains to <b>+2</b> foes and deals <b>Critical</b> damage to <i class="chill">Chilled</i> foes.`, apply: (m) => { m.superconductor = true; } },
+	{ id: 'frozen_branch', keeper: 'duo', keepers: ['glace', 'mira'], slot: 'passive', name: 'Frozen Branch', desc: () => `<i class="conflict">Conflict</i> bursts apply 3 <i class="chill">Chill</i> and deal <b>×2</b> damage to Frozen foes.`, apply: (m) => { m.frozenBranch = true; } },
+	{ id: 'merge_storm', keeper: 'duo', keepers: ['arc', 'mira'], slot: 'passive', name: 'Merge Storm', desc: () => `<i class="conflict">Conflict</i> bursts call <i class="arc">lightning</i> on 3 foes for <b>15</b> each.`, apply: (m) => { m.mergeStorm = true; } },
 	{ id: 'blame', keeper: 'mira', slot: 'passive', name: 'Blame', desc: (k) => `Deal <b>+${pct(0.25 * k)}</b> damage to bosses and elite foes.`, apply: (m, k) => { m.blame += 0.25 * k; } },
 ];
 
@@ -93,6 +102,7 @@ export function baseMods() {
 		dmgMul: 1, attackMul: 1, specialMul: 1, castMul: 1, dashMul: 1, crit: 0.03,
 		attackEl: null, attackPow: 0, specialEl: null, specialPow: 0, castEl: null, castPow: 0, dashEl: null, dashPow: 0,
 		chains: 0, arcMul: 1, burnMul: 1, shatter: 0, rekindle: 0, conflictMul: 1, conflictPow: 12, blame: 0,
+		thermalShock: 0, hotPatch: false, flameWar: false, superconductor: false, frozenBranch: false, mergeStorm: false,
 		maxHpAdd: 0, maxMpAdd: 0, mpRegenMul: 1, speedMul: 1, dashChargesAdd: 0, castRadiusAdd: 0, starPierce: 0, flareStar: 0, stepOver: 0,
 	};
 }
@@ -111,16 +121,39 @@ export function rollRarity(bonus = 0) {
 }
 
 // Offer up to 3 boons from a keeper, avoiding exact duplicates the player already owns.
+// Display identity for a boon's source; Duo boons blend both Keepers.
+export function keeperOf(def) {
+	if (def.keeper !== 'duo') return KEEPERS[def.keeper];
+	const [a, b] = def.keepers.map((k) => KEEPERS[k]);
+	return { id: 'duo', name: `${a.name} & ${b.name}`, css: a.css, css2: b.css, color: a.color, color2: b.color };
+}
+
+// Duo boons this Keeper could offer: needs a boon from both of its Keepers already.
+export function eligibleDuos(keeperId) {
+	const P = G.player;
+	const list = P.boonList();
+	const owned = new Set(list.map((b) => b.id));
+	const has = (k) => list.some((b) => BOON_BY_ID[b.id].keeper === k);
+	return BOONS.filter((b) => b.keeper === 'duo' && b.keepers.includes(keeperId) && !owned.has(b.id) && b.keepers.every(has));
+}
+
 export function makeOffer(keeperId) {
 	const P = G.player;
 	const owned = new Set(P.boonList().map((b) => b.id));
 	const pool = BOONS.filter((b) => b.keeper === keeperId && !owned.has(b.id));
 	const picks = shuffle(pool).slice(0, 3);
-	const bonus = G.save.unlocks.includes('party') ? 0.15 : 0;
-	return picks.map((b) => {
+	const bonus = (G.save.unlocks.includes('party') ? 0.15 : 0) + rank('autoUpdate') * 0.06;
+	const offers = picks.map((b) => {
 		const replaces = b.slot !== 'passive' && P.boons[b.slot] ? BOON_BY_ID[P.boons[b.slot].id] : null;
 		return { id: b.id, rarity: rollRarity(bonus), replaces };
 	});
+	const duos = eligibleDuos(keeperId);
+	if (duos.length && Math.random() < 0.45) {
+		const d = duos[Math.floor(Math.random() * duos.length)];
+		const duo = { id: d.id, rarity: 'duo', replaces: null };
+		if (offers.length >= 3) offers[2] = duo; else offers.push(duo);
+	}
+	return offers;
 }
 
 export function pickKeeper(exclude = []) {

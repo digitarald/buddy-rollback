@@ -225,6 +225,33 @@ export const PORTRAITS = {
 			'.KK......KK.',
 		], pal: { G: '#7b6a4e', R: '#ff3b30', Y: '#ffc53d', K: '#222' },
 	},
+	transitive: {
+		rows: [
+			'G....G....G.',
+			'GG..GG...GG.',
+			'.G.G..G.G...',
+			'..GGGGGGG...',
+			'.BBBBBBBBB..',
+			'.BWWWWWWWB..',
+			'.BWKWWWKWB..',
+			'.BRRRRRRRB..',
+			'.BBBBBBBBB..',
+		], pal: { G: '#7dff6a', B: '#8a6a44', W: '#efe6cf', K: '#1c2a20', R: '#cb3837' },
+	},
+	confabula: {
+		rows: [
+			'.....MM.....',
+			'...CCCCCC...',
+			'..CCWWWWCC..',
+			'.CCWCCCCWCC.',
+			'MCWCCKKCCWCM',
+			'MCWCCKKCCWCM',
+			'.CCWCCCCWCC.',
+			'..CCWWWWCC..',
+			'...CCCCCC...',
+			'....M..M....',
+		], pal: { C: '#58f0ff', W: '#e8fbff', K: '#07040f', M: '#ff4fd8' },
+	},
 	revert: {
 		rows: [
 			'...YYYYYY...',

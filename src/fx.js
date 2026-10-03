@@ -188,7 +188,7 @@ const slashFS = /* glsl */`
 	void main() {
 		if (vT > uHead) discard;
 		float tail = smoothstep(uHead - 0.75, uHead, vT);
-		float edge = pow(vR, 3.0);
+		float edge = pow(clamp(vR, 0.0, 1.0), 3.0);
 		float core = smoothstep(0.82, 1.0, vR);
 		vec3 c = mix(uColor, uCore, core) * (0.35 + edge * 1.8);
 		float a = tail * uFade * (0.08 + edge * 0.9);
@@ -351,7 +351,7 @@ export function lightning(a, b, { color = 0xffe066, width = 0.14, dur = 0.18, y 
 const beamFS = /* glsl */`
 	uniform vec3 uColor; uniform float uA; varying vec2 vUv;
 	void main() {
-		float a = pow(1.0 - vUv.y, 2.0) * uA * (0.6 + 0.4 * sin(vUv.x * 40.0));
+		float a = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.0) * uA * (0.6 + 0.4 * sin(vUv.x * 40.0));
 		gl_FragColor = vec4(uColor * a, 1.0);
 	}`;
 export function beam({ x, z, r = 0.6, h = 7, color = 0xff3048, dur = 0.9, grow = true }) {
@@ -389,6 +389,38 @@ export function addTransient(obj, dur, onUpdate, onEnd, real = false) {
 	const o = transient(obj, dur, onUpdate, onEnd);
 	FX.transients[FX.transients.length - 1].real = real;
 	return o;
+}
+
+// ---------------- struck-through names (The Deprecated kill flourish) ----------------
+const strikeTex = new Map();
+function strikeTexture(text) {
+	if (strikeTex.has(text)) return strikeTex.get(text);
+	const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+	const g = c.getContext('2d');
+	g.font = 'bold 34px ui-monospace, Menlo, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+	g.shadowColor = '#b48cff'; g.shadowBlur = 10; g.fillStyle = '#efe6ff';
+	g.fillText(text, 128, 34);
+	const w = Math.min(240, g.measureText(text).width + 16);
+	g.shadowColor = '#ff3048'; g.fillStyle = '#ff4a5e';
+	g.fillRect(128 - w / 2, 32, w, 4);
+	const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+	strikeTex.set(text, t);
+	return t;
+}
+export function strikeText(x, y, z, text) {
+	const mat = new THREE.MeshBasicMaterial({ map: strikeTexture(text), transparent: true, depthWrite: false, color: new THREE.Color(1.6, 1.5, 1.8) });
+	mat.userData.keepMap = true;
+	const m = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.5), mat);
+	m.position.set(x, y, z);
+	m.renderOrder = 13;
+	const vx = rand(-0.4, 0.4);
+	transient(m, 1.1, (k, dt) => {
+		m.position.y += dt * 1.4; m.position.x += vx * dt;
+		m.quaternion.copy(R.camera.quaternion);
+		const pop = k < 0.12 ? 0.6 + k / 0.12 * 0.5 : 1.1 - (k - 0.12) * 0.15;
+		m.scale.set(pop, pop, 1);
+		mat.opacity = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
+	});
 }
 
 // ---------------- damage numbers ----------------

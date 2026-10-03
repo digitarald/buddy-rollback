@@ -28,6 +28,10 @@ const SAVE_KEY = 'buddy-rollback-save-v1';
 export function defaultSave() {
 	return {
 		stars: 0,
+		memories: 0,
+		config: {},
+		codex: {},
+		codexRead: {},
 		unlocks: [],
 		hat: null,
 		runs: 0,
@@ -37,9 +41,9 @@ export function defaultSave() {
 		commitIdx: 0,
 		seen: {},
 		flags: {},
-		bossKills: { deprecata: 0, collector: 0, revert: 0 },
+		bossKills: { deprecata: 0, collector: 0, transitive: 0, confabula: 0, revert: 0 },
 		lastDeath: null,
-		settings: { music: 0.55, sfx: 0.8, shake: 1, variant: 'stable' },
+		settings: { music: 0.55, sfx: 0.8, shake: 1, rumble: 1, variant: 'stable' },
 	};
 }
 
@@ -49,7 +53,7 @@ export function loadSave() {
 		if (!raw) return defaultSave();
 		const d = JSON.parse(raw);
 		const def = defaultSave();
-		return { ...def, ...d, settings: { ...def.settings, ...(d.settings || {}) }, bossKills: { ...def.bossKills, ...(d.bossKills || {}) } };
+		return { ...def, ...d, settings: { ...def.settings, ...(d.settings || {}) }, bossKills: { ...def.bossKills, ...(d.bossKills || {}) }, config: { ...(d.config || {}) }, codex: { ...(d.codex || {}) }, codexRead: { ...(d.codexRead || {}) } };
 	} catch {
 		return defaultSave();
 	}

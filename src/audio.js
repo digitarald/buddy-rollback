@@ -6,6 +6,8 @@ const PROGRESSIONS = {
 	dark: [[57, 60, 64], [58, 62, 65], [53, 57, 60], [52, 56, 59]], // Am Bb F E
 	hope: [[48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60]], // C G Am F
 	void: [[57, 60, 64], [52, 55, 59], [53, 57, 60], [50, 53, 57]], // Am Em F Dm
+	deps: [[52, 55, 59], [48, 52, 55], [50, 53, 57], [47, 50, 54]], // Em C Dm Bdim
+	latent: [[57, 61, 64], [59, 62, 66], [54, 57, 61], [52, 56, 59]], // A Bm F#m E
 };
 
 const MOODS = {
@@ -16,7 +18,11 @@ const MOODS = {
 	combat: { bpm: 108, prog: 'minor', pad: 0.8, bell: 0, arp: 1, bass: 1, drums: 1 },
 	combat2: { bpm: 112, prog: 'dark', pad: 0.8, bell: 0, arp: 1, bass: 1, drums: 1 },
 	combat3: { bpm: 100, prog: 'void', pad: 1, bell: 0.2, arp: 1, bass: 1, drums: 1 },
+	combat5: { bpm: 120, prog: 'deps', pad: 0.7, bell: 0.1, arp: 1.1, bass: 1.2, drums: 1 },
+	boss3: { bpm: 128, prog: 'deps', pad: 1, bell: 0, arp: 1.2, bass: 1.3, drums: 2 },
+	combat4: { bpm: 116, prog: 'latent', pad: 0.8, bell: 0.3, arp: 1.2, bass: 1, drums: 1 },
 	boss: { bpm: 124, prog: 'dark', pad: 1, bell: 0, arp: 1, bass: 1, drums: 2 },
+	boss2: { bpm: 132, prog: 'latent', pad: 0.9, bell: 0.25, arp: 1.3, bass: 1, drums: 2 },
 	calm: { bpm: 68, prog: 'hope', pad: 1, bell: 0.6, arp: 0, bass: 0.3, drums: 0 },
 	ending: { bpm: 70, prog: 'hope', pad: 1, bell: 0.7, arp: 0.4, bass: 0.6, drums: 0 },
 };

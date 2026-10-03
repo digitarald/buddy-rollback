@@ -51,6 +51,53 @@ code { font-family: var(--mono); color: #9fd8ff; background: rgba(79,195,255,.08
 .hud-tr { position: absolute; right: 28px; top: 22px; display: flex; gap: 12px; align-items: center; }
 .stars-pill { padding: 6px 14px 6px 12px; border-radius: 20px; background: rgba(0,0,0,.6); border: 1.5px solid rgba(255,205,15,.6); color: #ffcd0f; font: 700 16px var(--mono); text-shadow: 0 0 10px rgba(255,205,15,.6); }
 .stars-pill::before { content: '★ '; }
+.mem-pill { padding: 6px 14px 6px 12px; border-radius: 20px; background: rgba(0,0,0,.6); border: 1.5px solid rgba(111,140,255,.65); color: #9fb4ff; font: 700 16px var(--mono); text-shadow: 0 0 10px rgba(111,140,255,.7); }
+.mem-pill::before { content: '◆ '; }
+.arsenal { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.wcard { display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; padding: 18px 14px !important; border-radius: 8px !important; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--w) 18%, transparent), rgba(10,8,18,.7)) !important; border: 1px solid color-mix(in srgb, var(--w) 45%, transparent) !important; color: #ddd !important; }
+.wcard.on { box-shadow: 0 0 0 2px var(--w), 0 0 28px color-mix(in srgb, var(--w) 45%, transparent); }
+.wcard[disabled] { filter: grayscale(1); }
+.w-glyph { font: 700 44px var(--mono); color: var(--w); text-shadow: 0 0 18px var(--w); height: 56px; }
+.w-name { font: 700 18px var(--serif); color: #fff; }
+.w-title { font: italic 13px var(--serif); color: var(--w); }
+.w-desc { font-size: 13px; color: #ccc; min-height: 52px; }
+.w-omega { font-size: 12px; color: #aaa; }
+.w-state { font: 600 12px var(--mono); letter-spacing: .15em; text-transform: uppercase; color: var(--w); margin-top: 4px; }
+.card.duo { background: linear-gradient(160deg, color-mix(in srgb, var(--k1) 30%, #120c1c), #120c1c 45%, color-mix(in srgb, var(--k2) 30%, #120c1c)) !important; border-image: linear-gradient(135deg, var(--k1), #ffe066, var(--k2)) 1 !important; animation: cardIn .45s var(--d) both, duoGlow 2s infinite alternate; }
+.card.duo .rarity { background: linear-gradient(90deg, var(--k1), #ffe066, var(--k2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; font-weight: 800; }
+@keyframes duoGlow { from { box-shadow: 0 0 18px color-mix(in srgb, var(--k1) 50%, transparent); } to { box-shadow: 0 0 30px color-mix(in srgb, var(--k2) 60%, transparent); } }
+.card.heroic { box-shadow: 0 0 24px rgba(255,94,122,.35), inset 0 0 30px rgba(255,224,102,.08); }
+.card.patch { background: linear-gradient(170deg, rgba(255,176,0,.16), rgba(18,12,28,.95) 55%) !important; }
+.patch-icon { display: grid; place-items: center; font-size: 64px; color: #ffb000; text-shadow: 0 0 24px #ffb000; }
+.bicon.duo { background: linear-gradient(135deg, var(--c), var(--c2)) !important; }
+.bl-patches { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.bl-patches span { font: 12px var(--mono); padding: 3px 8px; border-radius: 10px; background: rgba(255,176,0,.14); border: 1px solid rgba(255,176,0,.5); color: #ffd27a; }
+.cfg-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.cfg { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 6px; background: rgba(20,24,48,.6); border: 1px solid rgba(111,140,255,.35); }
+.cfg.locked { opacity: .55; filter: grayscale(.6); }
+.cfg.maxed { border-color: rgba(125,255,176,.5); }
+.cfg-key { font: 12px var(--mono); color: #9cdcfe; overflow-wrap: anywhere; }
+.cfg-key .q { color: #ce9178; } .cfg-key .v { color: #b5cea8; }
+.cfg-name { font: 700 15px var(--serif); color: #fff; }
+.cfg-desc { font-size: 13px; color: #ccc; flex: 1; }
+.cfg-desc .next { color: #9fb4ff; }
+.cfg-pips { display: flex; gap: 5px; }
+.cfg-pips i { width: 16px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); }
+.cfg-pips i.on { background: #6f8cff; box-shadow: 0 0 8px #6f8cff; }
+.panel.codex { width: min(980px, 94vw); }
+.codex-body { display: grid; grid-template-columns: 250px 1fr; gap: 20px; margin-top: 14px; min-height: 52vh; }
+.codex-nav { max-height: 60vh; overflow: auto; padding-right: 6px; }
+.codex-nav h3 { margin: 12px 0 4px; font-size: 13px; }
+.codex-nav button { display: flex; justify-content: space-between; width: 100%; margin: 3px 0; padding: 6px 10px !important; font: 14px var(--serif); text-align: left; }
+.codex-nav button.on { background: rgba(232,199,122,.25); color: #fff; }
+.codex-nav button.unread::after { content: '•'; color: #9fd8ff; margin-left: 6px; text-shadow: 0 0 8px #9fd8ff; }
+.codex-nav .pips { font-size: 9px; letter-spacing: 2px; color: var(--gold); opacity: .8; margin-left: auto; }
+.codex-page { padding: 6px 18px; border-left: 1px solid rgba(232,199,122,.25); font: 17px/1.6 var(--serif); color: #e6e0d4; max-height: 60vh; overflow: auto; }
+.codex-page h3 { font: 700 20px var(--mono); color: #9cdcfe; letter-spacing: 0; margin-top: 0; }
+.codex-page p.new { animation: fadeDown .6s ease; color: #fff; text-shadow: 0 0 12px rgba(159,216,255,.35); }
+.codex-next { font: italic 14px var(--serif); color: #9fb4ff; margin-top: 18px; }
+.codex-next.done { color: #7dffb0; }
+.dim { color: #888; font-size: 13px; }
 #loc { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); font: 13px var(--serif); letter-spacing: .25em; text-transform: uppercase; color: rgba(232,199,122,.75); text-shadow: 0 2px 4px #000; }
 #boon-icons { position: absolute; left: 28px; top: 22px; display: flex; flex-direction: column; gap: 6px; }
 .bicon { position: relative; width: 36px; height: 36px; transform: rotate(45deg); border: 2px solid var(--r); background: radial-gradient(circle, color-mix(in srgb, var(--c) 60%, #000), #0b0812); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 60%, transparent); display: grid; place-items: center; margin: 4px; }
@@ -248,7 +295,7 @@ button.tiny { display: block; margin: 16px auto 0; padding: 4px 10px !important;
 <div id="hud">
 	<div id="boon-icons"></div>
 	<div id="loc"></div>
-	<div class="hud-tr"><div class="stars-pill" id="stars">0</div></div>
+	<div class="hud-tr"><div class="mem-pill" id="mem" style="display:none">0</div><div class="stars-pill" id="stars">0</div></div>
 	<div class="hud-bl">
 		<div class="hud-portrait" id="hud-portrait"></div>
 		<div class="bars">
@@ -271,6 +318,9 @@ button.tiny { display: block; margin: 16px auto 0; padding: 4px 10px !important;
 <div id="boon-screen" class="screen"></div>
 <div id="board-screen" class="screen"></div>
 <div id="wardrobe-screen" class="screen"></div>
+<div id="config-screen" class="screen"></div>
+<div id="arsenal-screen" class="screen"></div>
+<div id="codex-screen" class="screen"></div>
 <div id="pause-screen" class="screen"></div>
 <div id="death-screen" class="screen"></div>
 <div id="title-screen">

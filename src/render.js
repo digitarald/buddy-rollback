@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { G } from './state.js';
+import { input } from './input.js';
 import { damp, rand } from './util.js';
 
 const GradeShader = {
@@ -20,6 +21,8 @@ const GradeShader = {
 		uRes: { value: new THREE.Vector2(1, 1) },
 		uTint: { value: new THREE.Color(1, 1, 1) },
 		uDesat: { value: 0 },
+		uShock: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0.5, 0.5, 9, 0)) },
+		uGlitch: { value: 0 },
 	},
 	vertexShader: /* glsl */`
 		varying vec2 vUv;
@@ -27,21 +30,41 @@ const GradeShader = {
 	`,
 	fragmentShader: /* glsl */`
 		uniform sampler2D tDiffuse;
-		uniform float uTime, uVignette, uAberr, uFlash, uSat, uLow, uDesat;
+		uniform float uTime, uVignette, uAberr, uFlash, uSat, uLow, uDesat, uGlitch;
+		uniform vec4 uShock[4];
 		uniform vec3 uFlashColor, uTint;
 		uniform vec2 uRes;
 		varying vec2 vUv;
 		float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 		void main() {
 			vec2 uv = vUv;
+			vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+			float shockLit = 0.0;
+			for (int i = 0; i < 4; i++) {
+				vec4 s = uShock[i];
+				if (s.z > 0.75) continue;
+				vec2 dv = (uv - s.xy) * asp;
+				float dist = length(dv);
+				float rad = s.z * 1.35;
+				float x = (dist - rad) * 26.0;
+				float band = exp(-x * x) * (1.0 - s.z / 0.75);
+				uv -= normalize(dv + 1e-5) / asp * band * 0.028 * s.w;
+				shockLit += band * s.w;
+			}
+			if (uGlitch > 0.001) {
+				float row = floor(uv.y * 42.0);
+				float g = step(1.0 - uGlitch * 0.55, hash(vec2(row, floor(uTime * 18.0))));
+				uv.x += (hash(vec2(row * 1.7, floor(uTime * 24.0))) - 0.5) * 0.07 * g * uGlitch;
+			}
 			vec2 c = uv - 0.5;
 			float d = length(c * vec2(uRes.x / uRes.y, 1.0)) / 0.9;
-			float ab = (0.0018 + uAberr) * d;
+			float ab = (0.0018 + uAberr + uGlitch * 0.012) * d;
 			vec3 col;
 			col.r = texture2D(tDiffuse, uv - c * ab).r;
 			col.g = texture2D(tDiffuse, uv).g;
 			col.b = texture2D(tDiffuse, uv + c * ab).b;
 			col *= uTint;
+			col += col * shockLit * 0.35;
 			float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
 			col = mix(vec3(l), col, uSat * (1.0 - uDesat));
 			float vig = smoothstep(1.25, 0.25, d);
@@ -63,7 +86,8 @@ export const R = {
 	baseOffset: new THREE.Vector3(0, 26.5, 18.5),
 	sun: null, hemi: null,
 	flashLights: [], flashIdx: 0,
-	propLights: [],
+	propLights: [], projLights: [],
+	shocks: [], shockIdx: 0, glitch: 0,
 	raycaster: new THREE.Raycaster(),
 	groundPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
 	cinematic: null,
@@ -114,12 +138,23 @@ export function initRenderer(container) {
 		scene.add(l);
 		R.propLights.push(l);
 	}
+	for (let i = 0; i < 3; i++) {
+		const l = new THREE.PointLight(0xff3366, 0, 4.5, 2);
+		scene.add(l);
+		R.projLights.push(l);
+	}
 
 	const size = new THREE.Vector2();
 	renderer.getDrawingBufferSize(size);
 	const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
 	const composer = new EffectComposer(renderer, rt);
 	composer.addPass(new RenderPass(scene, camera));
+	// Guard: one NaN pixel would otherwise be smeared into black blocks by bloom.
+	composer.addPass(new ShaderPass({
+		uniforms: { tDiffuse: { value: null } },
+		vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+		fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(min(c.rgb, vec3(64.0)), c.a); }',
+	}));
 	const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.55, 0.82);
 	composer.addPass(bloom);
 	const grade = new ShaderPass(GradeShader);
@@ -158,7 +193,19 @@ export function setAtmosphere({ bg, fog, fogDensity = 0.022, hemiSky, hemiGround
 
 export function addTrauma(t) {
 	R.trauma = Math.min(1, R.trauma + t * (G.save?.settings.shake ?? 1));
+	const r = (G.save?.settings.rumble ?? 1);
+	if (t >= 0.08) input.rumble(Math.min(1, t * 1.25) * r, Math.min(1, t * 0.9 + 0.1) * r, 70 + t * 260);
 }
+
+const _sv = new THREE.Vector3();
+// Screen-space refraction ring anchored to a world position.
+export function shockwave(pos, strength = 1) {
+	_sv.set(pos.x, pos.y ?? 0.6, pos.z).project(R.camera);
+	if (_sv.z > 1) return;
+	const s = R.grade.uniforms.uShock.value[R.shockIdx++ % 4];
+	s.set(_sv.x * 0.5 + 0.5, _sv.y * 0.5 + 0.5, 0, strength);
+}
+export function glitch(a = 0.5) { R.glitch = Math.max(R.glitch, a); }
 export function flashScreen(amount = 0.3, color = 0xffffff) {
 	R.flash = Math.max(R.flash, amount);
 	R.grade.uniforms.uFlashColor.value.set(color);
@@ -235,6 +282,9 @@ export function render(realDt) {
 	R.aberr = damp(R.aberr, 0, 6, realDt);
 	u.uFlash.value = R.flash;
 	u.uAberr.value = R.aberr;
+	R.glitch = damp(R.glitch, 0, 5, realDt);
+	u.uGlitch.value = R.glitch;
+	for (const s of u.uShock.value) s.z += realDt;
 	const p = G.player;
 	const low = p && G.mode === 'run' && p.hp > 0 ? Math.max(0, 1 - p.hp / (p.maxHp * 0.3)) : 0;
 	u.uLow.value = damp(u.uLow.value, low * (0.55 + 0.25 * Math.sin(u.uTime.value * 5)), 4, realDt);

@@ -6,23 +6,30 @@ import { R, snapCamera, addTrauma, flashScreen, punchZoom, flashLight } from './
 import { buildRoom, disposeRoom, addDoors, openDoors, BIOMES, LAYOUTS, randomSpawnPoint, T } from './world.js';
 import { burst, ring, beam, clearFX, damageNumber } from './fx.js';
 import { clearCombat } from './combat.js';
+import { clearJuice, rumble } from './juice.js';
 import { Enemy, clearEnemies, livingCount } from './enemies.js';
 import { spawnBoss } from './bosses.js';
 import { UI } from './ui.js';
-import { KEEPERS, makeOffer, pickKeeper, BOON_BY_ID, BOONS, RARITY } from './boons.js';
-import { createCaretNPC, createLintNPC, createMessageBubble, createBoard, createWardrobe, rewardIcon, portalMaterial, createHat } from './models.js';
+import { KEEPERS, makeOffer, pickKeeper, BOON_BY_ID, BOONS, RARITY, keeperOf } from './boons.js';
+import { boonFanfare } from './vfx.js';
+import { WEAPONS, PATCHES, PATCH_BY_ID } from './weapons.js';
+import { createCaretNPC, createLintNPC, createMessageBubble, createBoard, createWardrobe, rewardIcon, portalMaterial, createHat, createLectern, createConfigTerminal, createToolbox } from './models.js';
+import { createWeaponModel } from './weapons.js';
+import { track, gainMemories, codexUnread, onCodexUnlock, rank } from './meta.js';
 import { glyphTexture } from './textures.js';
 import { glowMat } from './materials.js';
 import { PROLOGUE, caretDialog, lintDialog, messageDialog, commitDialog, bossIntro, bossOutro, keeperQuote, hasFreshCaret, ENDING, CREDITS, fragmentLevel } from './story.js';
 import { pick, rand, weighted, shuffle, easeOutBack } from './util.js';
 
-const RUN_BIOMES = ['deprecated', 'legacy', 'zero'];
+const WEAPON_ORDER = ['caret', 'lance', 'gauntlets'];
+const availablePatches = () => PATCHES.filter((p) => !G.player.patches.has(p.id) && (!p.weapon || p.weapon === G.player.weaponId));
+const RUN_BIOMES = ['deprecated', 'legacy', 'deps', 'latent', 'zero'];
 const COMBAT_LAYOUTS = ['hall', 'cross', 'ring', 'split', 'long'];
-const BOSS_OF = { deprecated: 'deprecata', legacy: 'collector', zero: 'revert' };
-const ROOMS_PER_BIOME = { deprecated: 4, legacy: 4, zero: 2 };
+const BOSS_OF = { deprecated: 'deprecata', legacy: 'collector', deps: 'transitive', latent: 'confabula', zero: 'revert' };
+const ROOMS_PER_BIOME = { deprecated: 4, legacy: 3, deps: 3, latent: 3, zero: 2 };
 
-const REWARD_COLORS = { heart: 0xe8334a, stars: 0xffcd0f, refactor: 0x7dffb0, snack: 0xd9a066, rest: 0x9fd8ff, boss: 0xff3048 };
-const REWARD_NAMES = { heart: 'Heart', stars: 'Stars', refactor: 'Refactor', snack: 'Coffee', rest: 'Rest', boss: 'Guardian', stairs: 'Descend' };
+const REWARD_COLORS = { heart: 0xe8334a, stars: 0xffcd0f, refactor: 0x7dffb0, snack: 0xd9a066, rest: 0x9fd8ff, boss: 0xff3048, memory: 0x6f8cff, patch: 0xffb000 };
+const REWARD_NAMES = { heart: 'Heart', stars: 'Stars', refactor: 'Refactor', snack: 'Coffee', rest: 'Rest', boss: 'Guardian', stairs: 'Descend', memory: 'Memory', patch: 'Patch' };
 
 function makeReward(kind, keeper) {
 	if (kind === 'boon') {
@@ -79,6 +86,7 @@ export const Flow = {
 
 	// ---------------- title ----------------
 	async boot() {
+		onCodexUnlock((e) => UI.toast(`<code>README.md</code> updated · <b>${e.name}</b>`, '#9fd8ff'));
 		G.mode = 'title';
 		this.loadHubScene();
 		G.player.face = Math.PI / 2;
@@ -131,6 +139,10 @@ export const Flow = {
 		const msg = add(createMessageBubble(), m.M);
 		const board = add(createBoard(), m.A);
 		const wardrobe = add(createWardrobe(), m.W);
+		const lectern = add(createLectern(), m.R);
+		const terminal = add(createConfigTerminal(), m.G);
+		const toolbox = add(createToolbox(), m.T);
+		this.refreshToolbox(toolbox);
 		// exit portal
 		const portal = new THREE.Group();
 		const pm = portalMaterial(0x9b6bff);
@@ -152,7 +164,12 @@ export const Flow = {
 		const tab = new THREE.Mesh(new THREE.PlaneGeometry(5, 1.1), new THREE.MeshBasicMaterial({ map: glyphTexture('● Untitled-1', { size: 512, font: 'bold 64px ui-monospace, monospace', glow: 14 }), transparent: true, color: new THREE.Color(0xffd9a8).multiplyScalar(1.4), depthWrite: false }));
 		tab.position.set(m.X.x - 7, 4.2, m.X.z - 1.6);
 		room.group.add(tab);
-		this.hubProps = { caret, lint, msg, board, wardrobe, portal, pm, bang };
+		const readmeBang = bang.clone();
+		readmeBang.material = bang.material.clone();
+		readmeBang.material.color.set(0x9fd8ff).multiplyScalar(2.2);
+		readmeBang.position.set(m.R.x, 3.2, m.R.z);
+		room.group.add(readmeBang);
+		this.hubProps = { caret, lint, msg, board, wardrobe, portal, pm, bang, lectern, terminal, readmeBang, toolbox };
 		if (!G.player) {
 			// created by main
 		}
@@ -165,6 +182,9 @@ export const Flow = {
 			{ pos: m.M, r: 2.4, label: 'Read the Unsent Message', action: () => this.talk(messageDialog(G.save)) },
 			{ pos: m.A, r: 2.2, label: 'Achievement Board', action: () => this.openBoard() },
 			{ pos: m.W, r: 2.2, label: 'Wardrobe', action: () => this.openWardrobe() },
+			{ pos: m.R, r: 2.2, label: 'Read README.md', action: () => this.openCodex() },
+			{ pos: m.G, r: 2.2, label: 'Edit settings.json', action: () => this.openConfig() },
+			{ pos: m.T, r: 2.2, label: 'Open the Toolbox', action: () => this.openArsenal() },
 		];
 		this.portalPos = m.X;
 	},
@@ -221,10 +241,70 @@ export const Flow = {
 		this.busy = false;
 	},
 
+	refreshToolbox(tb) {
+		WEAPON_ORDER.forEach((id, i) => {
+			const slot = tb.userData.slots[i];
+			slot.clear();
+			if (!WEAPONS[id].unlock(G.save)) {
+				const q = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), new THREE.MeshBasicMaterial({ map: glyphTexture('?', { font: 'bold 100px sans-serif' }), transparent: true, depthWrite: false, color: new THREE.Color(0x887766) }));
+				slot.add(q);
+				return;
+			}
+			const w = createWeaponModel(id);
+			if (id === 'lance') { w.rotation.x = -Math.PI / 2; w.scale.setScalar(0.6); }
+			if (id === 'gauntlets') { w.userData.fists.forEach((f, k) => f.position.set((k ? 1 : -1) * 0.16, 0, 0)); w.scale.setScalar(0.8); }
+			if (id === 'caret') w.scale.setScalar(1.1);
+			w.userData.mat.color.set(WEAPONS[id].color).multiplyScalar(id === (G.save.weapon || 'caret') ? 3.2 : 1.4);
+			slot.add(w);
+		});
+	},
+
+	async openArsenal() {
+		this.busy = true;
+		await UI.openArsenal((id) => {
+			G.save.weapon = id;
+			writeSave();
+			G.player.setWeapon(id);
+			G.player.emote('cool');
+			this.refreshToolbox(this.hubProps.toolbox);
+			const P = G.player;
+			ring({ x: P.pos.x, z: P.pos.z, r1: 3, color: WEAPONS[id].color, dur: 0.5, intensity: 3 });
+			burst({ x: P.pos.x, z: P.pos.z, y: 0.8, count: 40, color: WEAPONS[id].color, color2: 0xffffff, speed: 5, up: 3, size: 0.22, life: 0.7 });
+		});
+		this.busy = false;
+	},
+
+	async openCodex() {
+		this.busy = true;
+		await UI.openCodex();
+		this.busy = false;
+	},
+
+	async openConfig() {
+		this.busy = true;
+		await UI.openConfig((c) => {
+			G.player.recompute();
+			G.player.hp = G.player.maxHp;
+			G.player.emote('cool');
+			UI.toast(`<code>${c.key}</code> updated`, '#9fb4ff');
+		});
+		this.busy = false;
+		if (!G.save.seen.lint_config && Object.keys(G.save.config).length) await this.talk(lintDialog(G.save));
+	},
+
 	updateHub(dt, realDt) {
 		const hp = this.hubProps;
 		if (!hp) return;
 		const t = G.time + performance.now() / 1000;
+		hp.readmeBang.visible = codexUnread(G.save) > 0;
+		hp.readmeBang.position.y = 3.2 + Math.sin(t * 4 + 1) * 0.12;
+		hp.readmeBang.lookAt(R.camera.position);
+		hp.lectern.userData.pages.rotation.z = Math.sin(t * 1.4) * 0.06;
+		hp.lectern.userData.glow.material.opacity = 0.55 + Math.sin(t * 2.2) * 0.2;
+		hp.terminal.userData.panel.position.y = 2.1 + Math.sin(t * 1.3) * 0.08;
+		hp.terminal.userData.mat.uniforms.uTime.value = t;
+		hp.terminal.userData.gear.rotation.z += realDt * 0.8;
+		hp.toolbox.userData.slots.forEach((sl, i) => { sl.position.y = 1.25 + Math.sin(t * 1.6 + i) * 0.05; if (sl.children[0]) sl.children[0].rotation.y += realDt * 0.6; });
 		// Caret blinks
 		const cm = hp.caret.userData.caret.userData.mat;
 		const on = Math.sin(t * 3.2) > -0.3;
@@ -264,7 +344,10 @@ export const Flow = {
 		writeSave();
 		const P = G.player;
 		P.resetForRun();
-		G.run = { biomeIdx: 0, roomInBiome: 0, depth: 0, kills: 0, stars: 0, hpScale: 1, dmgScale: 1, dmgTakenMul: 1, lastLayout: null };
+		const wid = G.save.weapon && WEAPONS[G.save.weapon]?.unlock(G.save) ? G.save.weapon : 'caret';
+		if (P.weaponId !== wid) P.setWeapon(wid);
+		track('weapon_run:' + wid);
+		G.run = { biomeIdx: 0, roomInBiome: 0, depth: 0, kills: 0, stars: 0, memories: 0, hpScale: 1, dmgScale: 1, dmgTakenMul: 1 - 0.05 * rank('trim'), lastLayout: null };
 		audio.play('door');
 		ring({ x: P.pos.x, z: P.pos.z, r1: 4, color: 0xb48cff, dur: 0.6 });
 		await this.enterRoom({ kind: 'combat', reward: makeReward('boon'), first: true });
@@ -315,8 +398,10 @@ export const Flow = {
 		P.vel.set(0, 0, 0);
 		P.dashCharges = P.dashMax;
 		snapCamera(P.pos);
-		run.hpScale = 1 + run.depth * 0.06 + run.biomeIdx * 0.3;
-		run.dmgScale = 1 + run.biomeIdx * 0.25;
+		// Each stage hits harder; permanent upgrades are what let Buddy keep pace.
+		run.hpScale = 1 + run.depth * 0.055 + run.biomeIdx * 0.25;
+		run.dmgScale = 1 + run.biomeIdx * 0.2;
+		room.onBreak = (b) => this.breakableDrop(b);
 		UI.showHUD(true);
 		const roomNo = run.roomInBiome + 1;
 		UI.setLocation(`${biome.name} · ${def.kind === 'boss' ? 'Guardian' : def.kind === 'rest' ? 'Rest' : 'Chamber ' + roomNo}`);
@@ -325,6 +410,11 @@ export const Flow = {
 		if (run.roomInBiome === 0 && def.kind === 'combat') UI.banner(biome.name, biome.sub, '#' + new THREE.Color(biome.glyph).getHexString());
 		this.busy = false;
 		if (biomeId === 'legacy' && !G.save.flags.reachedLegacy) { G.save.flags.reachedLegacy = true; writeSave(); }
+		if (biomeId === 'latent' && !G.save.flags.reachedLatent) { G.save.flags.reachedLatent = true; writeSave(); }
+		if (biomeId === 'deps' && !G.save.flags.reachedDeps) { G.save.flags.reachedDeps = true; writeSave(); }
+		if (run.roomInBiome === 0 && def.kind === 'combat') track('reach:' + biomeId);
+		const vit = rank('hotExit') * 3;
+		if (vit && !def.first && P.hp < P.maxHp) P.heal(vit, true);
 
 		if (def.kind === 'combat') this.startCombat(def);
 		else if (def.kind === 'rest') this.startRest();
@@ -344,14 +434,16 @@ export const Flow = {
 
 	spawnWave(budget) {
 		const biome = BIOMES[this.biome];
-		const COST = { null: 1, tab: 1.3, warning: 1, regression: 2.8, leak: 1.8 };
+		const COST = { null: 1, tab: 1.3, warning: 1, regression: 2.8, leak: 1.8, ghost: 1.6, modal: 2.6, peer: 3.4, typosquat: 1.4 };
 		const run = G.run;
 		let t = 0;
 		while (budget > 0.5) {
 			let type = weighted(biome.enemies);
 			if (run.depth < 2 && type === 'regression') type = 'null';
+			if (type === 'modal' && this.pendingSpawns.filter((s) => s.type === 'modal').length >= 2) type = 'ghost';
+			if (type === 'peer' && this.pendingSpawns.filter((s) => s.type === 'peer').length >= 2) type = 'typosquat';
 			budget -= COST[type];
-			const elite = run.depth >= 4 && Math.random() < 0.08 + run.biomeIdx * 0.05;
+			const elite = run.depth >= 3 && Math.random() < 0.05 + run.biomeIdx * 0.06;
 			this.pendingSpawns.push({ type, t, elite });
 			t += 0.18;
 		}
@@ -363,9 +455,24 @@ export const Flow = {
 			const s = this.pendingSpawns[i];
 			s.t -= dt;
 			if (s.t <= 0) {
-				const p = randomSpawnPoint(G.room, G.player.pos, 5.5);
-				const e = new Enemy(s.type, p.x, p.z, { hpScale: G.run.hpScale, dmgScale: G.run.dmgScale, elite: s.elite });
-				e.onDeath = () => { G.run.kills++; };
+				const p = randomSpawnPoint(G.room, G.player.pos, s.type === 'typosquat' ? 7 : 5.5);
+				const opts = { hpScale: G.run.hpScale, dmgScale: G.run.dmgScale, elite: s.elite, instant: s.type === 'typosquat' };
+				const onDeath = (e) => {
+					G.run.kills++;
+					if (e.elite) {
+						gainMemories(1);
+						damageNumber(e.pos.x, 2, e.pos.z, 0, { text: '◆ +1', color: '#9fb4ff' });
+					}
+				};
+				const e = new Enemy(s.type, p.x, p.z, opts);
+				e.onDeath = onDeath;
+				if (s.type === 'peer') {
+					let q = randomSpawnPoint(G.room, G.player.pos, 5);
+					for (let k = 0; k < 12 && Math.hypot(q.x - p.x, q.z - p.z) < 5; k++) q = randomSpawnPoint(G.room, G.player.pos, 5);
+					const mate = new Enemy('peer', q.x, q.z, opts);
+					mate.onDeath = onDeath;
+					e.partner = mate; mate.partner = e;
+				}
 				this.pendingSpawns.splice(i, 1);
 			}
 		}
@@ -395,6 +502,22 @@ export const Flow = {
 		}, 500);
 	},
 
+	// Breakable files occasionally leak a little loot, like urns in a dungeon.
+	breakableDrop(b) {
+		const P = G.player;
+		const r = Math.random();
+		if (r < 0.28) {
+			const n = 1 + (Math.random() < 0.3 ? 1 : 0);
+			G.save.stars += n;
+			if (G.run) G.run.stars += n;
+			damageNumber(b.x, 1.2, b.z, n, { text: '★ +' + n, color: '#ffcd0f' });
+			burst({ x: b.x, z: b.z, y: 1, count: 12, color: 0xffcd0f, color2: 0xffffff, speed: 3, up: 4, size: 0.2, life: 0.6 });
+			audio.play('pickup', { vol: 0.5 });
+		} else if (r < 0.4 && P.hp < P.maxHp) {
+			P.heal(3, true);
+		}
+	},
+
 	rewardSpot() {
 		const room = G.room;
 		const P = G.player;
@@ -418,23 +541,27 @@ export const Flow = {
 				this.busy = true;
 				const quote = keeperQuote(rw.keeper, KEEPERS[rw.keeper]);
 				const choice = await UI.chooseBoon(rw.keeper, offers, quote);
+				track('keeper:' + rw.keeper);
 				const entry = P.addBoon(choice.id, choice.rarity);
 				const def = BOON_BY_ID[choice.id];
-				UI.toast(`<b>${def.name}</b> · ${RARITY[entry.rarity].name}`, KEEPERS[def.keeper].css);
-				ring({ x: P.pos.x, z: P.pos.z, r1: 4, color: KEEPERS[def.keeper].color, dur: 0.6, intensity: 3 });
-				burst({ x: P.pos.x, z: P.pos.z, y: 0.8, count: 50, color: KEEPERS[def.keeper].color, color2: 0xffffff, speed: 5, up: 4, size: 0.25, life: 0.9 });
-				flashLight(P.pos, KEEPERS[def.keeper].color, 40, 0.4);
+				const kk = keeperOf(def);
+				UI.toast(`<b>${def.name}</b> · ${RARITY[entry.rarity].name}`, kk.css);
+				boonFanfare(P, entry.rarity, kk.color, kk.color2 ?? null);
+				if (def.keeper === 'duo') { track('duo:' + def.id); G.save.flags['duo_' + def.id] = true; }
 				P.emote(Math.random() < 0.5 ? 'love' : 'cool');
 				this.busy = false;
 				break;
 			}
-			case 'heart':
+			case 'heart': {
 				P.baseMaxHp += 10;
 				P.recompute();
-				P.heal(10);
-				UI.toast('Heart · <b>+10 Max HP</b>', '#ff5e7a');
+				// The Guardian's heart is a breather before the next stage, like Hades' post-boss fountain.
+				const fromBoss = this.roomDef?.kind === 'boss';
+				P.heal(fromBoss ? 10 + Math.round(P.maxHp * 0.35) : 10);
+				UI.toast(fromBoss ? 'Guardian\'s Heart · <b>+10 Max HP</b> and healed' : 'Heart · <b>+10 Max HP</b>', '#ff5e7a');
 				P.emote('love');
 				break;
+			}
 			case 'stars': {
 				const n = 5 + Math.floor(run.depth / 2) + Math.floor(Math.random() * 4);
 				G.save.stars += n; run.stars += n;
@@ -452,6 +579,26 @@ export const Flow = {
 				P.heal(Math.round(P.maxHp * 0.35));
 				UI.toast('Coffee break · <b>healed</b>', '#d9a066');
 				break;
+			case 'patch': {
+				const offers = shuffle(availablePatches()).slice(0, 3);
+				if (!offers.length) { G.save.stars += 5; break; }
+				run.patchThisBiome = true;
+				this.busy = true;
+				const pick = await UI.choosePatch(offers);
+				P.patches.add(pick.id);
+				track('patch:' + pick.id);
+				UI.toast(`Patch merged · <b>${pick.name}</b>`, '#ffb000');
+				boonFanfare(P, 'epic', 0xffb000, null);
+				this.busy = false;
+				break;
+			}
+			case 'memory': {
+				const n = rw.amount || (2 + run.biomeIdx + Math.floor(Math.random() * 3));
+				gainMemories(n);
+				UI.toast(`◆ <b>+${n}</b> Memories · spend them in <code>settings.json</code>`, '#9fb4ff');
+				P.emote('love');
+				break;
+			}
 		}
 		this.rewardTaken = true;
 		if (this.roomDef.kind === 'boss') return;
@@ -474,8 +621,10 @@ export const Flow = {
 					{ v: 'boon', w: i === 0 ? 100 : 40 },
 					{ v: 'stars', w: 16 },
 					{ v: 'heart', w: 12 },
-					{ v: 'refactor', w: G.player.boonList().length ? 16 : 0 },
+					{ v: 'refactor', w: G.player.boonList().some((b) => b.rarity !== 'duo') ? 16 : 0 },
 					{ v: 'snack', w: G.player.hp < G.player.maxHp * 0.7 ? 14 : 5 },
+					{ v: 'memory', w: 15 },
+					{ v: 'patch', w: run.biomeIdx >= 1 && !run.patchThisBiome && availablePatches().length ? 14 : 0 },
 				]);
 				if (kind !== 'boon' && rewards.some((r) => r.kind === kind)) kind = 'boon';
 				if (kind === 'boon') {
@@ -523,6 +672,7 @@ export const Flow = {
 		if (d.reward.kind === 'stairs') {
 			run.biomeIdx++;
 			run.roomInBiome = 0;
+			run.patchThisBiome = false;
 			run.depth++;
 			await this.enterRoom({ kind: 'combat', reward: makeReward('boon') });
 			return;
@@ -581,7 +731,9 @@ export const Flow = {
 		const boss = spawnBoss(kind, bx, bz);
 		boss.onDeath = () => this.onBossDefeated(boss);
 		if (kind === 'deprecata') G.save.flags.reachedBoss1 = true;
+		rumble(0.7, 0.9, 600);
 		G.player.face = -Math.PI / 2;
+		track('meet:' + kind);
 		UI.letterbox(true);
 		R.cinematic = { target: { x: bx, z: bz + 1 }, zoom: 0.62, speed: 2.2 };
 		await this.wait(900);
@@ -593,7 +745,7 @@ export const Flow = {
 		R.cinematic = null;
 		UI.letterbox(false);
 		writeSave();
-		audio.setMood('boss');
+		audio.setMood(kind === 'confabula' ? 'boss2' : kind === 'transitive' ? 'boss3' : 'boss');
 		boss.begin();
 		this.busy = false;
 		this.cleared = false;
@@ -607,12 +759,20 @@ export const Flow = {
 		G.boss = null;
 		audio.setMood('calm');
 		await UI.dialog(bossOutro(kind, G.save));
+		const firstKill = !(G.save.bossKills[kind] > 0);
 		G.save.bossKills[kind] = (G.save.bossKills[kind] || 0) + 1;
+		track('boss:' + kind);
 		writeSave();
-		if (kind === 'revert') return this.ending();
+		if (kind === 'revert') {
+			gainMemories(firstKill ? 25 : 10);
+			return this.ending();
+		}
 		const room = G.room;
-		new Pickup(makeReward('heart'), -2.5, 0);
-		new Pickup(makeReward('stars'), 2.5, 0);
+		new Pickup(makeReward('heart'), -3, 0);
+		new Pickup(makeReward('stars'), 3, 0);
+		const mem = makeReward('memory');
+		mem.amount = (firstKill ? 12 : 4) + G.run.biomeIdx * 2;
+		new Pickup(mem, 0, 1.5);
 		this.bossRewards = 2;
 		this.roomDef.kind = 'boss';
 		setTimeout(() => this.showDoors(), 1200);
@@ -633,7 +793,7 @@ export const Flow = {
 		const biome = BIOMES[this.biome];
 		await UI.deathScreen({
 			where: `${biome.name}${this.roomDef.kind === 'boss' ? ' · Guardian' : ' · Chamber ' + (run.roomInBiome + 1)}`,
-			kills: run.kills, stars: run.stars, boons: G.player.boonList().length,
+			kills: run.kills, stars: run.stars, memories: run.memories || 0, boons: G.player.boonList().length,
 		});
 		this.dying = false;
 		await this.enterHub(true);
@@ -666,6 +826,7 @@ export const Flow = {
 		clearEnemies();
 		clearCombat();
 		clearFX();
+		clearJuice();
 		for (const p of G.pickups) G.scene.remove(p.mesh);
 		G.pickups.length = 0;
 		disposeRoom(G.room);

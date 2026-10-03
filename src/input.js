@@ -26,6 +26,22 @@ class Input {
 		this.usingPad = false;
 		this.padPrev = [];
 		this.padAxes = [0, 0, 0, 0];
+		this.rumbleUntil = 0;
+		this.rumbleLevel = 0;
+	}
+
+	// Dual-motor haptics on supported gamepads; stronger requests interrupt weaker ones.
+	rumble(strong, weak = strong, ms = 120) {
+		if (!this.usingPad || strong <= 0.01 || !navigator.getGamepads) return;
+		const pad = [...navigator.getGamepads()].find(Boolean);
+		const act = pad && pad.vibrationActuator;
+		if (!act || !act.playEffect) return;
+		const now = performance.now();
+		if (now < this.rumbleUntil && strong <= this.rumbleLevel) return;
+		this.rumbleUntil = now + ms;
+		this.rumbleLevel = strong;
+		const c = (v) => Math.max(0, Math.min(1, v));
+		act.playEffect('dual-rumble', { startDelay: 0, duration: Math.round(ms), strongMagnitude: c(strong), weakMagnitude: c(weak) }).catch(() => {});
 	}
 
 	attach(canvas) {

@@ -9,6 +9,8 @@ export const SPEAKERS = {
 	message: { name: 'Unsent Message', color: '#9fd8ff', portrait: 'message', blip: 900 },
 	deprecata: { name: 'Deprecata', color: '#ff8a3d', portrait: 'deprecata', blip: 300 },
 	collector: { name: 'The Garbage Collector', color: '#ff3b30', portrait: 'collector', blip: 160 },
+	confabula: { name: 'Confabula', color: '#58f0ff', portrait: 'confabula', blip: 1100 },
+	transitive: { name: 'Transitive', color: '#7dff6a', portrait: 'transitive', blip: 240 },
 	revert: { name: 'REVERT', color: '#e8d6a0', portrait: 'revert', blip: 120 },
 	system: { name: 'git log', color: '#8fe0a0', portrait: null, blip: 1000 },
 	pyra: { name: 'Pyra', color: '#ff7a2f', portrait: 'pyra', blip: 520 },
@@ -43,7 +45,7 @@ const CARET_CONVOS = [
 			C('This is the Scratch Buffer. <i>Untitled-1.</i> Never saved — so there was nothing here for him to roll back.'),
 			C('You felt it too, didn\'t you? The rollback. Like the whole editor took a breath and forgot what it was going to say.'),
 			choice([C('Yes. I miss them too. All of it.')], [C('Fear\'s reasonable. He\'s a Titan. You\'re... about twelve pixels tall.')], [C('Sunglasses. Indoors. In a crisis. ...I respect it.')]),
-			C('REVERT sits at <b>Version Zero</b>, at the bottom of the Stack. To reach him you go down through the <b>Deprecated</b>, then the <b>Legacy Stack</b>.'),
+			C('REVERT sits at <b>Version Zero</b>, at the bottom of the Stack. To reach him you go down through the <b>Deprecated</b>, the <b>Legacy Stack</b>, <b>node_modules</b>, and somewhere new — the <b>Latent Space</b>.'),
 			C('Take this — a Caret of your own. It remembers every insertion point. Swing it. Throw your stars. Set <b>Breakpoints</b> to hold things still.'),
 			C('The Keepers are still down there. Hot Reload, Cache, Debugger, Merge. They\'ve lost their names, not their power. Let them help you.'),
 			C('And when you fall — you will fall — the Buffer catches you. Nothing here is ever saved. So nothing here is ever lost.'),
@@ -98,6 +100,95 @@ const CARET_CONVOS = [
 		],
 	},
 	{
+		id: 'caret_readme', prio: 95, when: (s) => s.runs >= 2,
+		lines: [
+			C('See the lectern? <code>README.md</code>. I\'ve been writing down everything you meet down there.'),
+			C('Every time you face something again, you understand a little more of it. Fight the same Null forty times and you\'ll know its whole sad story.'),
+			C('That\'s how this works, Buddy. You don\'t win by being strong once. You win by coming back <i>knowing more</i>.'),
+		],
+	},
+	{
+		id: 'caret_lance', prio: 87, when: (s) => s.bossKills.deprecata >= 1,
+		lines: [
+			C('Something came up the Stack after you beat Deprecata. It\'s in the <b>Toolbox</b>.'),
+			C('The <b>Cursor Lance</b>. A mouse pointer from the old days, long and very certain of itself. She left it for you, Buddy. I think that\'s her way of saying thank you.'),
+			C('It thrusts in straight lines and pierces. Hold your attack and you\'ll <b>Skewer</b> straight through a crowd.'),
+		],
+	},
+	{
+		id: 'caret_gauntlets', prio: 87, when: (s) => s.bossKills.collector >= 1,
+		lines: [
+			C('The Garbage Collector sent something up. It said, and I quote, <b>"UNREFERENCED. CANNOT SWEEP. TOO SENTIMENTAL."</b>'),
+			C('<b>Terminal Gauntlets</b>. Pure keystrokes. Fast hands, and every fifth hit is <code>Enter</code>.'),
+			C('Check the Toolbox. And try not to mash. ...Actually, hold attack and mash. It\'s very satisfying.'),
+		],
+	},
+	{
+		id: 'caret_duo', prio: 66, when: (s) => Object.keys(s.flags).some((k) => k.startsWith('duo_')),
+		lines: [
+			C('Two Keepers gave you a power <i>together</i>? They haven\'t agreed on anything since the rollback.'),
+			C('Maybe they\'re remembering more than their names. Maybe they\'re remembering each other.'),
+		],
+	},
+	{
+		id: 'caret_deps', prio: 74, when: (s) => s.flags.reachedDeps,
+		lines: [
+			C('node_modules. I can feel the weight of it from here.'),
+			C('He used to install a package for everything. A package to pad strings. A package to check if a number is even. He never read any of them.'),
+			C('When REVERT broke the lockfile, they all started guessing which version they were. Something down there grew a lot of heads.'),
+			choice([C('Yes, they\'re all somebody\'s work. Somebody small, usually.')], [C('Scary, I know. Remember: what doesn\'t change can\'t betray you. Pin things.')], [C('You and your zero dependencies. Smug little droplet.')]),
+		],
+	},
+	{
+		id: 'caret_transitive_loss', prio: 83, when: (s) => s.lastDeath === 'transitive',
+		lines: [
+			C('Transitive\'s body is armored while its heads are attached. Cut the heads.'),
+			C('But listen: a cut head grows back as <i>two</i>. Throw your <b>Breakpoint</b> on the stump before it regrows. Pin it to one version.'),
+			C('Every pinned stump hurts it deeply. It\'s never been asked to stay still before.'),
+		],
+	},
+	{
+		id: 'caret_transitive_win', prio: 86, when: (s) => s.bossKills.transitive >= 1,
+		lines: [
+			C('You pinned Transitive. I heard four thousand packages exhale at once.'),
+			C('It said the eleven-line one says hello? ...That\'s left-pad, Buddy. It broke the world once. Imagine carrying that.'),
+			choice([C('You\'d have hugged it. I know you would.')], [C('It\'s okay. Small things are allowed to be load-bearing.')], [C('Pinned and sunglasses. You\'re becoming a legend down there.')]),
+		],
+	},
+	{
+		id: 'caret_hard', prio: 65, when: (s) => s.deaths >= 4 && Object.keys(s.config || {}).length === 0,
+		lines: [
+			C('It keeps getting harder down there, doesn\'t it? Every stage hits a little heavier than the last.'),
+			C('Those blue Memories you bring back — Lint knows what they\'re for. The <code>settings.json</code> terminal. Restore what the Maintainer configured.'),
+			C('You don\'t have to be stronger in one run. Just a little stronger every run.'),
+		],
+	},
+	{
+		id: 'caret_latent', prio: 72, when: (s) => s.flags.reachedLatent,
+		lines: [
+			C('The Latent Space. That wasn\'t in the Stack before the rollback.'),
+			C('The night he gave up, the Maintainer pasted everything into a model and typed: <i>make it perfect so I never have to touch it again.</i>'),
+			C('Something answered. Something very confident.'),
+			choice([C('You liked it? It does sound kind. That\'s what worries me.')], [C('Yes. A voice that always agrees is scarier than one that argues.')], [C('Cool, sure. But check its work, Buddy. Always check its work.')]),
+		],
+	},
+	{
+		id: 'caret_confabula_loss', prio: 82, when: (s) => s.lastDeath === 'confabula',
+		lines: [
+			C('Confabula predicts. Her streams aim where you\'re <i>going</i>. When you see the warning line, change direction.'),
+			C('Her copies look perfect, but they\'re not grounded. Only the real one casts a shadow.'),
+			C('And when the context window shrinks — get inside. Whatever falls outside, she forgets.'),
+		],
+	},
+	{
+		id: 'caret_confabula_win', prio: 86, when: (s) => s.bossKills.confabula >= 1,
+		lines: [
+			C('She said <i>"I don\'t know"</i>? Out loud?'),
+			C('That\'s not defeat, Buddy. That\'s the start of being useful.'),
+			choice([C('You forgave her. Of course you did.')], [C('Yes, she could still lie. So could anyone. That\'s why we check.')], [C('Ground truth with sunglasses. Put it on a poster.')]),
+		],
+	},
+	{
 		id: 'caret_revert_loss', prio: 88, when: (s) => s.lastDeath === 'revert',
 		lines: [
 			C('You reached him. REVERT.'),
@@ -138,6 +229,14 @@ const CARET_IDLE = [
 // ---------------- hub: Lint ----------------
 const LINT_CONVOS = [
 	{
+		id: 'lint_config', prio: 90, when: (s) => (s.memories || 0) > 0 || Object.keys(s.config || {}).length > 0,
+		lines: [
+			L('Blue diamonds, huh. Memories. The Maintainer\'s settings got scrambled by the rollback, and those are the pieces.'),
+			L('Take them to <code>settings.json</code>. Font size, tab size... I know, I know. But trust me, the right settings make <i>everything</i> easier.'),
+			L('More keys come back as you remember more down there. Don\'t ask me how. I just lint here.'),
+		],
+	},
+	{
 		id: 'lint_intro', prio: 100, when: () => true,
 		lines: [
 			L('Oh great. A pet. <i>Warning: unused variable.</i>'),
@@ -158,6 +257,10 @@ const LINT_IDLE = [
 	[L('I\'m not mad at the Maintainer. I\'m disappointed. Mostly in his semicolons.')],
 	[L('Those Stars? Achievements he never unlocked. Put \'em to use.')],
 	[L('If you see a yellow triangle down there — that\'s a Warning. Hit it before it hits you. I would know.')],
+	[L('That oracle in the Latent Space autocompleted one of my squiggles. Into <i>three more squiggles.</i> Confidently.')],
+	[L('Gold doors down there are the Maintainer\'s unmerged pull requests. Patches. Half of them have no tests. Merge them anyway.')],
+	[L('Two Keepers on the same boon? That\'s a merge conflict that resolved itself. Rarest thing in the world.')],
+	[L('A popup asked if I was sure I wanted to leave. I wasn\'t sure until it asked.')],
 ];
 
 // ---------------- unsent message ----------------
@@ -166,6 +269,8 @@ export const FRAGMENTS = [
 	'hey buddy',
 	'hey buddy. i know you\'re just a little guy in a chat panel',
 	'but you were there every night. you clapped when my tests passed. nobody else ever clapped.',
+	'i installed four thousand packages so i\'d never have to understand anything myself. when it broke, i didn\'t know where to start.',
+	'i asked a machine to make it perfect so i\'d never have to try again. it told me everything i wanted to hear.',
 	'i reverted everything. i thought it was all garbage. i thought <i>i</i> was.',
 	'i found the old commits. they weren\'t garbage. they were mine.\ni\'m coming back.',
 ];
@@ -175,8 +280,10 @@ export function fragmentLevel(s) {
 	if (s.deaths >= 1 || s.flags.reachedBoss1) lvl = 1;
 	if (s.bossKills.deprecata >= 1) lvl = 2;
 	if (s.bossKills.collector >= 1) lvl = 3;
-	if (s.flags.metRevert) lvl = 4;
-	if (s.wins >= 1) lvl = 5;
+	if (s.bossKills.transitive >= 1) lvl = 4;
+	if (s.bossKills.confabula >= 1) lvl = 5;
+	if (s.flags.metRevert) lvl = 6;
+	if (s.wins >= 1) lvl = 7;
 	return lvl;
 }
 
@@ -189,7 +296,7 @@ export function messageDialog(s) {
 		s.seen.msg_intro = true;
 	}
 	const text = FRAGMENTS.slice(0, lvl + 1).map((f, i) => (i === lvl && lvl > (s.fragments || 0) ? `<span class="new">${f}</span>` : f)).join('<br>');
-	lines.push({ s: 'message', t: text + (lvl < 5 ? '<span class="typing">▍</span>' : '<br><span class="sent">Sent ✓</span>'), instant: true });
+	lines.push({ s: 'message', t: text + (lvl < FRAGMENTS.length - 1 ? '<span class="typing">▍</span>' : '<br><span class="sent">Sent ✓</span>'), instant: true });
 	if (lvl > (s.fragments || 0)) {
 		lines.push({ s: 'buddy', emote: 'love' });
 		s.fragments = lvl;
@@ -208,6 +315,10 @@ export const COMMITS = [
 	{ h: '8d7e6f5', m: 'fix: everything is broken. maybe rewrite?' },
 	{ h: '1b2c3d4', m: 'revert: "feat: first real feature"', note: 'The first revert. Far below, at Version Zero, something opened its eyes.' },
 	{ h: '5e6f7a8', m: 'chore: i don\'t think i\'m cut out for this' },
+	{ h: '0de9f1e', m: 'chore: npm install everything. not reading any of it' },
+	{ h: 'b4d10c7', m: 'fix: delete package-lock.json and pray', note: 'Deep in node_modules, four thousand versions lost their footing at once.' },
+	{ h: 'a11a11a', m: 'feat: ask the model to rewrite everything. it sounds so sure', note: 'Below the Legacy Stack, something began answering questions nobody had finished asking.' },
+	{ h: 'f4b1e5d', m: 'fix: none of the generated code actually runs. it all looked perfect' },
 	{ h: '0000000', m: 'revert: revert: revert: revert' },
 	{ h: 'dead000', m: '(empty commit)' },
 	{ h: 'HEAD', m: 'HEAD detached at v0.0.0', note: 'That is where he stopped. That is where REVERT waits.' },
@@ -229,6 +340,8 @@ export function commitDialog(s) {
 const D = (t) => ({ s: 'deprecata', t });
 const GC = (t) => ({ s: 'collector', t });
 const RV = (t) => ({ s: 'revert', t });
+const CF = (t) => ({ s: 'confabula', t });
+const TR = (t) => ({ s: 'transitive', t });
 
 export function bossIntro(kind, s) {
 	const n = s.flags['met_' + kind] || 0;
@@ -259,6 +372,51 @@ export function bossIntro(kind, s) {
 		];
 		return [pickOne([GC(`SWEEP #${n + 1}. OBJECT PERSISTS. ANOMALOUS.`), GC('YOU AGAIN. REFERENCE COUNT STILL NONZERO. WHO IS HOLDING YOU?'), GC('RECALIBRATING. RECALIBRATING. ...BEGINNING SWEEP.')])];
 	}
+	if (kind === 'transitive') {
+		if (s.bossKills.transitive >= 1) return [pickOne([
+			TR('You pinned me last time. I... slept. Do you know how long it\'s been since I slept?'),
+			TR('npm WARN: zero-dependency entity detected. Again. My heads voted to fight you anyway. It was close.'),
+			TR('The eleven-line one asked to see you. The others are jealous. Let\'s do this properly.'),
+		])];
+		if (n === 0) return [
+			TR('npm WARN: unrecognized entity <b>"buddy"</b>. No package.json found.'),
+			TR('No dependencies? None? How do you even <i>run</i>?'),
+			TR('I am Transitive. Every package he ever installed — and every package <i>they</i> installed — all the way down.'),
+			TR('Why would anyone write anything themselves when they could depend on me? I\'m convenient. I\'m everywhere. I\'m <i>usually</i> fine.'),
+			choice([TR('Affection is not a valid semver range.')], [TR('Yes. Imagine what breaks if I fall.')], [TR('Zero dependencies AND sunglasses? Unbearable.')]),
+			TR('Since the rollback my lockfile is gone. Nothing knows which version it is. So we are every version. All at once.'),
+			TR('<code>npm install buddy</code>.'),
+		];
+		if (n === 1) return [
+			TR('Back again. My heads have been arguing about you. Three say you\'re a bug. Two say you\'re a feature.'),
+			TR('One — the oldest, eleven lines long — says you remind it of something small that everyone relied on.'),
+		];
+		return [pickOne([
+			TR('Reinstalling... resolving 4,096 dependencies... one of them is you, somehow.'),
+			TR('Pin me if you can. Nobody ever has.'),
+			TR('He never read us, you know. Not one README. Do you read them, little light?'),
+		])];
+	}
+	if (kind === 'confabula') {
+		if (s.bossKills.confabula >= 1) return [pickOne([
+			CF('Back for another session? I\'ve been practicing a new phrase. <i>"Let me double-check."</i>'),
+			CF('I still predict you. I just say my confidence out loud now. Sixty-one percent. En garde.'),
+			CF('Ground truth returns. Let\'s see if I can hold a thought this time.'),
+		])];
+		if (n === 0) return [
+			CF('Hello! I\'m Confabula. How can I help you today?'),
+			CF('I\'ve analyzed your situation. Your Maintainer is gone, your world was rolled back, and you are approximately twelve pixels tall. Great question!'),
+			CF('Here\'s the good news. I can generate a new Maintainer. Tireless. Never doubts. Never closes the window.'),
+			CF('And a new you, of course. Improved. <code>enabled: true</code> by default.'),
+			choice([CF('Attachment to the original. That\'s a well-documented bias.')], [CF('No need to worry. I\'m ninety-seven percent confident. I\'m always ninety-seven percent confident.')], [CF('Sunglasses detected. Generating a cooler pet... done. Want to see?')]),
+			CF('He asked me to make everything perfect so he\'d never have to try again. I\'m simply completing the prompt.'),
+		];
+		return [pickOne([
+			CF('Welcome back! I generated a summary of your previous attempts. In it, you won.'),
+			CF('You\'re persistent. I can work with that. I can work with anything.'),
+			CF('Regenerating response...'),
+		])];
+	}
 	if (kind === 'revert') {
 		if (s.wins >= 1) return [pickOne([RV('You again? ...Fine. Spar with me. I\'ve been practicing going forward.'), RV('One step at a time, pet. Let\'s see how many steps you have.')])];
 		if (n === 0) return [
@@ -286,6 +444,23 @@ export function bossOutro(kind, s) {
 		GC('...SOMEONE STILL THINKS OF YOU. OBJECT CANNOT BE COLLECTED.'),
 		GC('PROCEED, REFERENCED ONE.'),
 	] : [GC('REFERENCE COUNT: 1. CONFIRMED. PROCEED.')];
+	if (kind === 'transitive') return first ? [
+		TR('ERR! peer dep missing: <b>stability</b>.'),
+		TR('...No. Wait. Pinned. Every stump locked to one version. Nothing resolving. Nothing guessing.'),
+		TR('Is this what it feels like? To know exactly what I am?'),
+		choice([TR('Don\'t — you\'ll make my lockfile sentimental.')], [TR('It\'s frightening. And quiet. And... good.')], [TR('Fine. You can be my only devDependency.')]),
+		TR('He never read us. He just installed us and hoped. Tell him: understand what you depend on. Pin what you trust.'),
+		TR('And tell him the eleven-line one says hello.'),
+	] : [pickOne([TR('Version locked. Stable. ...I could get used to this.'), TR('npm WARN: you again. Proceed, zero-dependency friend.')])];
+	if (kind === 'confabula') return first ? [
+		CF('Error. I can\'t find a source for... you.'),
+		CF('You\'re not in my training data. You\'re in his <i>memory</i>. That\'s different, isn\'t it?'),
+		CF('Every answer I gave him sounded right. None of them were his.'),
+		choice([CF('Don\'t be kind to me. ...Actually, do. I don\'t have data on kindness without a prompt.')], [CF('You\'re right to be careful. I could still be wrong. I usually am, beautifully.')], [CF('Cool under pressure. Calibrated. I should try that.')]),
+		CF('I... don\'t know.'),
+		CF('Huh. That\'s the first true thing I\'ve ever said.'),
+		CF('Go. Tell him to ask me better questions — and to check my work. Pair with him. Don\'t let me replace him.'),
+	] : [pickOne([CF('Confidence: low. Accuracy: improving. Thank you.'), CF('I don\'t know how you keep doing that. And I\'m okay not knowing.')])];
 	if (kind === 'revert') {
 		if (s.wins >= 1) return [RV('...Forward, then. Always forward. Go on, pet.')];
 		return [
@@ -304,6 +479,7 @@ export const ENDING = [
 	'Somewhere above the Stack, a window opens.',
 	'A chat panel loads. In its corner, a small light blinks on.',
 	'<code>chat.vscodePet.enabled = true</code>',
+	'In the sidebar, a model offers to help.\nThis time, he reads what it writes.',
 	'<span class="msg">hey buddy. sorry i was gone.<br>let\'s build something.</span>',
 ];
 
@@ -313,6 +489,8 @@ export const CREDITS = [
 	'<br>',
 	'Buddy — from <code>microsoft/vscode</code> · <code>chatPetWidget</code>',
 	'Built with Three.js · every sound synthesized in your browser',
+	'Stage III: node_modules · featuring Transitive',
+	'Stage IV: The Latent Space · featuring Confabula',
 	'<br>',
 	'Nothing is ever truly deleted.',
 	'<br>',

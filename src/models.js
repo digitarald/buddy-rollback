@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { rimify, toon, addOutline, glowMat } from './materials.js';
-import { glyphTexture } from './textures.js';
+import { glyphTexture, textTexture } from './textures.js';
 
 export const BUDDY_COLORS = {
 	stable: { body: 0x23a8f2, mid: 0x0077b8, dark: 0x004e7c, glow: 0x47b8ff },
@@ -340,6 +340,142 @@ export function createEnemyModel(type, biomeTint = 0xff3366) {
 			}
 			break;
 		}
+		case 'ghost': {
+			// Ghost Text: greyed autocomplete words that lunge where you are about to be.
+			const m = reg(toon(0x6a7090, { roughness: 0.3, rim: 0x58f0ff, rimStrength: 1.4, rimPower: 1.8, transparent: true, opacity: 0.82 }));
+			const widths = [0.5, 0.34, 0.6];
+			let x = -0.62;
+			widths.forEach((w, i) => {
+				const word = new THREE.Mesh(new RoundedBoxGeometry(w, 0.3, 0.16, 2, 0.06), m);
+				word.position.set(x + w / 2, 0.85 + (i === 1 ? 0.05 : 0), 0);
+				word.rotation.z = -0.08;
+				word.castShadow = true;
+				body.add(word);
+				x += w + 0.08;
+			});
+			eyeMat = glowMat(0x58f0ff, 3);
+			const cursor = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.48, 0.06), eyeMat);
+			cursor.position.set(x + 0.04, 0.86, 0);
+			body.add(cursor);
+			const tab = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.3), new THREE.MeshBasicMaterial({ map: glyphTexture('Tab ↹', { size: 128, font: 'bold 38px ui-monospace, monospace', glow: 8 }), transparent: true, depthWrite: false, color: new THREE.Color(0xbfeaff).multiplyScalar(1.4) }));
+			tab.position.set(0, 1.28, 0.02);
+			body.add(tab);
+			break;
+		}
+		case 'modal': {
+			// Modal Dialog: a UX dark pattern that traps focus and slams the floor.
+			const frame = reg(toon(0xe6e9f2, { roughness: 0.35, rim: 0x7aa2ff, rimStrength: 0.7 }));
+			const win = new THREE.Mesh(new RoundedBoxGeometry(1.7, 1.15, 0.16, 3, 0.07), frame);
+			win.position.y = 1.35; win.castShadow = true;
+			addOutline(win, 0.035);
+			body.add(win);
+			const bar = new THREE.Mesh(new RoundedBoxGeometry(1.7, 0.24, 0.2, 2, 0.06), glowMat(0x3b82f6, 1.5));
+			bar.position.set(0, 1.86, 0);
+			body.add(bar);
+			const close = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), new THREE.MeshBasicMaterial({ map: glyphTexture('✕', { font: 'bold 96px sans-serif', glow: 8 }), transparent: true, depthWrite: false, color: new THREE.Color(0xff4058).multiplyScalar(2) }));
+			close.position.set(0.7, 1.86, 0.11);
+			body.add(close);
+			const text = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: textTexture(['Are you sure', 'you want to leave?'], { w: 512, h: 144, font: 'bold 46px ui-sans-serif, system-ui, sans-serif', color: '#20263a' }), transparent: true, depthWrite: false }));
+			text.position.set(0, 1.45, 0.085);
+			body.add(text);
+			eyeMat = glowMat(0x3b82f6, 2.2);
+			const ok = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.2, 0.08, 2, 0.04), eyeMat);
+			ok.position.set(0.35, 1.0, 0.09);
+			const nope = new THREE.Mesh(new RoundedBoxGeometry(0.62, 0.2, 0.08, 2, 0.04), reg(toon(0x9aa2b8, { roughness: 0.5 })));
+			nope.position.set(-0.32, 1.0, 0.09);
+			body.add(ok, nope);
+			break;
+		}
+		case 'peer': {
+			// Peer Dependency: a hexagonal package with a socket that its partner's tether plugs into.
+			const m = reg(toon(0x2e4a34, { roughness: 0.35, metalness: 0.3, rim: 0x7dff6a, rimStrength: 1.1, rimPower: 2 }));
+			const hex = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.9, 6), m);
+			hex.position.y = 0.85; hex.castShadow = true;
+			addOutline(hex, 0.04);
+			body.add(hex);
+			eyeMat = glowMat(0x7dff6a, 2.6);
+			const socket = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 6, 16), eyeMat);
+			socket.position.set(0, 1.35, 0); socket.rotation.x = Math.PI / 2;
+			body.add(socket);
+			const eye = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.22, 4, 8), eyeMat);
+			eye.rotation.z = Math.PI / 2; eye.position.set(0, 0.95, 0.5);
+			body.add(eye);
+			const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.3), new THREE.MeshBasicMaterial({ map: glyphTexture('peer', { size: 128, font: 'bold 40px ui-monospace, monospace', glow: 8 }), transparent: true, depthWrite: false, color: new THREE.Color(0x7dff6a).multiplyScalar(1.6) }));
+			tag.position.set(0, 0.62, 0.49);
+			body.add(tag);
+			break;
+		}
+		case 'typosquat': {
+			// Typosquat: disguised as a breakable file until it opens its lid-mouth.
+			const m = reg(toon(0x6b5236, { roughness: 0.75, rim: 0xcb3837, rimStrength: 0.25 }));
+			const box = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.8, 1.0, 2, 0.08), m);
+			box.position.y = 0.4; box.castShadow = true;
+			body.add(box);
+			const lid = new THREE.Group();
+			lid.position.set(0, 0.8, -0.5);
+			const lidM = new THREE.Mesh(new RoundedBoxGeometry(1.04, 0.32, 1.04, 2, 0.08), m);
+			lidM.position.set(0, 0.16, 0.5); lidM.castShadow = true;
+			lid.add(lidM);
+			const teethM = toon(0xf2efe6, { roughness: 0.3 });
+			for (let i = 0; i < 6; i++) {
+				const t = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 4), teethM);
+				t.position.set(-0.4 + i * 0.16, -0.02, 0.98); t.rotation.x = Math.PI;
+				lid.add(t);
+				const b = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 4), teethM);
+				b.position.set(-0.4 + i * 0.16, 0.78, 0.48);
+				body.add(b);
+			}
+			body.add(lid);
+			eyeMat = glowMat(0xff3048, 3);
+			const eyes = new THREE.Group();
+			for (const s of [-1, 1]) {
+				const e = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), eyeMat);
+				e.position.set(0.18 * s, 0.86, 0.32);
+				eyes.add(e);
+			}
+			eyes.visible = false;
+			body.add(eyes);
+			const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.36), new THREE.MeshBasicMaterial({ map: glyphTexture(['lodahs', 'reqeusts', 'colours', 'expres', 'reakt', 'left-pda'][Math.floor(Math.random() * 6)], { size: 128, font: 'bold 26px ui-monospace, monospace', glow: 6 }), transparent: true, depthWrite: false, color: new THREE.Color(0x7dff6a).multiplyScalar(1.5) }));
+			label.position.set(0, 0.42, 0.51);
+			body.add(label);
+			root.userData.lid = lid;
+			root.userData.eyes = eyes;
+			break;
+		}
+		case 'head': {
+			// One of Transitive's heads: a package crate on a snake jaw, wearing its name tag.
+			const m = reg(toon(0x35553a, { roughness: 0.4, metalness: 0.25, rim: 0x7dff6a, rimStrength: 0.9, rimPower: 2 }));
+			const skull = new THREE.Mesh(new RoundedBoxGeometry(1.1, 0.75, 1.3, 3, 0.16), m);
+			skull.position.set(0, 1.6, 0.1); skull.castShadow = true;
+			addOutline(skull, 0.04);
+			body.add(skull);
+			const jaw = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.25, 1.1, 2, 0.08), m);
+			jaw.position.set(0, 1.12, 0.2);
+			body.add(jaw);
+			eyeMat = glowMat(0x7dff6a, 3);
+			for (const s of [-1, 1]) {
+				const e = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.16, 4, 8), eyeMat);
+				e.position.set(0.28 * s, 1.78, 0.76); e.rotation.z = Math.PI / 2 + 0.4 * s;
+				body.add(e);
+			}
+			const fang = toon(0xf2efe6, { roughness: 0.3 });
+			for (const s of [-1, 1]) {
+				const f = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.28, 4), fang);
+				f.position.set(0.3 * s, 1.3, 0.72); f.rotation.x = Math.PI;
+				body.add(f);
+			}
+			const name = ['left-pad', 'is-even', 'is-odd', 'colors', 'event-stream', 'core-js', 'leftpad2', 'lodash'][Math.floor(Math.random() * 8)];
+			const tag = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.36), new THREE.MeshBasicMaterial({ map: glyphTexture(name, { size: 256, font: 'bold 44px ui-monospace, monospace', glow: 10 }), transparent: true, depthWrite: false, color: new THREE.Color(0xd8ffd0).multiplyScalar(1.5) }));
+			tag.position.set(0, 2.25, 0.2);
+			body.add(tag);
+			root.userData.jaw = jaw;
+			root.userData.tag = tag;
+			break;
+		}
+		case 'decoy': {
+			const m = createConfabula({ decoy: true });
+			return { ...m, eyeMat: m.coreMat };
+		}
 		case 'commit': {
 			const m = reg(toon(0xf3e6c0, { roughness: 0.2, metalness: 0.3, emissive: 0x806020, emissiveIntensity: 0.8, rim: 0xffffff, rimStrength: 1 }));
 			const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 0), m);
@@ -525,6 +661,98 @@ export function createRevert() {
 	return { root, body, mats, halo, handH, handM, hands, faceMat, trimM };
 }
 
+// Transitive: package.json body; heads are separate enemies connected by animated necks.
+export function createTransitive() {
+	const root = new THREE.Group();
+	const body = new THREE.Group();
+	root.add(body);
+	const card = toon(0x7a5a3a, { roughness: 0.8, rim: 0x7dff6a, rimStrength: 0.45 });
+	const dark = toon(0x1c2a20, { roughness: 0.5, metalness: 0.4, rim: 0x7dff6a, rimStrength: 0.7 });
+	const mats = [card, dark];
+	const crate = new THREE.Mesh(new RoundedBoxGeometry(3.0, 2.2, 2.6, 3, 0.2), card);
+	crate.position.y = 1.15; crate.castShadow = true;
+	addOutline(crate, 0.05);
+	body.add(crate);
+	const tape = new THREE.Mesh(new THREE.BoxGeometry(3.04, 0.3, 0.5), toon(0xcb3837, { roughness: 0.5 }));
+	tape.position.set(0, 2.2, 0);
+	body.add(tape);
+	const label = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.0), new THREE.MeshBasicMaterial({ map: textTexture(['package.json', '"deps": 4096'], { w: 512, h: 220, font: 'bold 52px ui-monospace, monospace', color: '#1c2a20', bg: '#efe6cf' }) }));
+	label.position.set(0, 1.0, 1.31);
+	body.add(label);
+	const coreMat = glowMat(0x7dff6a, 2.4);
+	const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), coreMat);
+	core.position.set(0, 2.8, 0);
+	body.add(core);
+	const sockets = [];
+	for (let i = 0; i < 6; i++) {
+		const sk = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.08, 6, 16), dark);
+		const a = -Math.PI / 2 + (i - 2.5) * 0.5;
+		sk.position.set(Math.cos(a) * 1.3, 2.2, Math.sin(a) * -1.0 + 0.3);
+		sk.rotation.x = Math.PI / 2;
+		body.add(sk);
+		sockets.push(sk);
+	}
+	return { root, body, mats, core, coreMat, sockets };
+}
+
+const neckGeo = new THREE.CylinderGeometry(0.22, 0.32, 1, 10, 1, true).translate(0, 0.5, 0).rotateX(Math.PI / 2);
+neckGeo.userData.shared = true;
+export function createNeck() {
+	const m = new THREE.Mesh(neckGeo, toon(0x2f4a33, { roughness: 0.45, metalness: 0.2, rim: 0x7dff6a, rimStrength: 0.8 }));
+	m.castShadow = true;
+	return m;
+}
+
+// Confabula: a faceted glass oracle with an attention halo and orbiting tokens.
+export function createConfabula({ decoy = false } = {}) {
+	const root = new THREE.Group();
+	const body = new THREE.Group();
+	root.add(body);
+	const glass = rimify(new THREE.MeshPhysicalMaterial({
+		color: decoy ? 0x5a1a58 : 0x1f1850, roughness: 0.12, metalness: 0.35, iridescence: 1, iridescenceIOR: 1.6,
+		clearcoat: 1, flatShading: true, transparent: true, opacity: decoy ? 0.74 : 0.86, emissive: decoy ? 0x3a0830 : 0x0a0830, emissiveIntensity: 0.9,
+	}), decoy ? 0xff4fd8 : 0x58f0ff, 1.0, 2.0);
+	const mats = [glass];
+	const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0, 1), glass);
+	shell.position.y = 2.7; shell.scale.set(1, 1.15, 1); shell.castShadow = !decoy;
+	body.add(shell);
+	const skirt = new THREE.Mesh(new THREE.ConeGeometry(1.05, 2.3, 6, 1, true), glass);
+	skirt.rotation.x = Math.PI; skirt.position.y = 1.15; skirt.castShadow = !decoy;
+	body.add(skirt);
+	const coreMat = glowMat(decoy ? 0xff4fd8 : 0x58f0ff, 2.6);
+	const core = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 16), coreMat);
+	core.position.y = 2.7;
+	body.add(core);
+	const pupil = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.24, 4, 10), new THREE.MeshBasicMaterial({ color: 0x07040f }));
+	pupil.position.set(0, 2.72, 0.43);
+	body.add(pupil);
+	const rings = [];
+	[[0x58f0ff, 1.65, 0.5], [0xff4fd8, 1.95, -0.7]].forEach(([c, r, tilt]) => {
+		const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.035, 6, 72), glowMat(decoy ? 0xff4fd8 : c, 2.4));
+		ring.position.y = 2.7; ring.rotation.set(Math.PI / 2 + tilt * 0.4, tilt, 0);
+		body.add(ring);
+		rings.push(ring);
+	});
+	const tokens = [];
+	const tokGeo = new RoundedBoxGeometry(0.2, 0.2, 0.2, 1, 0.04);
+	for (let i = 0; i < 10; i++) {
+		const t = new THREE.Mesh(tokGeo, glowMat(i % 2 ? 0xff4fd8 : 0x58f0ff, 2.2));
+		t.userData.a = (i / 10) * Math.PI * 2;
+		t.userData.r = 1.6 + (i % 3) * 0.25;
+		t.userData.y = 2.2 + (i % 4) * 0.35;
+		body.add(t);
+		tokens.push(t);
+	}
+	const hands = [];
+	for (const [s, ch] of [[-1, '{'], [1, '}']]) {
+		const h = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.4), new THREE.MeshBasicMaterial({ map: glyphTexture(ch, { font: 'bold 120px ui-monospace, monospace', glow: 22 }), transparent: true, depthWrite: false, color: new THREE.Color(0xff4fd8).multiplyScalar(2.2) }));
+		h.position.set(1.55 * s, 2.3, 0.4);
+		body.add(h);
+		hands.push(h);
+	}
+	return { root, body, mats, core, coreMat, rings, tokens, hands, shell };
+}
+
 // ---------- NPCs & props ----------
 export function createCaretNPC() {
 	const g = new THREE.Group();
@@ -639,6 +867,105 @@ export function createWardrobe() {
 	hat.position.set(0, 2.2, 0);
 	hat.scale.setScalar(0.9);
 	g.add(hat);
+	return g;
+}
+
+// Toolbox: Buddy's weapon rack.
+export function createToolbox() {
+	const g = new THREE.Group();
+	const wood = toon(0x3a2a22, { roughness: 0.7, rim: 0xffb070, rimStrength: 0.3 });
+	const base = new THREE.Mesh(new RoundedBoxGeometry(2.0, 0.5, 0.8, 2, 0.06), wood);
+	base.position.y = 0.25; base.castShadow = true;
+	const back = new THREE.Mesh(new RoundedBoxGeometry(2.0, 1.6, 0.14, 2, 0.04), wood);
+	back.position.set(0, 1.25, -0.33); back.castShadow = true;
+	g.add(base, back);
+	const slots = [];
+	for (let i = 0; i < 3; i++) {
+		const s = new THREE.Group();
+		s.position.set(-0.62 + i * 0.62, 1.25, -0.15);
+		g.add(s);
+		slots.push(s);
+	}
+	const l = new THREE.PointLight(0xffd9a8, 2.5, 5, 1.8);
+	l.position.set(0, 2.4, 0.8);
+	g.add(l);
+	g.userData = { slots };
+	return g;
+}
+
+// README.md lectern: the codex.
+export function createLectern() {
+	const g = new THREE.Group();
+	const stone = toon(0x3a3446, { roughness: 0.7, rim: 0x9fd8ff, rimStrength: 0.35 });
+	const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.38, 1.2, 8), stone);
+	stem.position.y = 0.6; stem.castShadow = true;
+	const top = new THREE.Mesh(new RoundedBoxGeometry(1.2, 0.14, 0.85, 2, 0.04), stone);
+	top.position.set(0, 1.25, 0); top.rotation.x = 0.35; top.castShadow = true;
+	g.add(stem, top);
+	const pages = new THREE.Group();
+	pages.position.set(0, 1.36, 0.02); pages.rotation.x = 0.35;
+	const paperM = new THREE.MeshStandardMaterial({ map: textTexture(['# README', '', '- buddy', '- caret', '- lint'], { w: 256, h: 256, font: 'bold 26px ui-monospace, monospace', color: '#24324a', bg: '#f1ead8', align: 'left' }), roughness: 0.9, emissive: 0x9fd8ff, emissiveIntensity: 0.08 });
+	for (const s of [-1, 1]) {
+		const page = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.66).rotateX(-Math.PI / 2), paperM);
+		page.position.x = 0.27 * s; page.rotation.z = -0.08 * s;
+		pages.add(page);
+	}
+	g.add(pages);
+	const glow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9fd8ff).multiplyScalar(0.45), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
+	glow.position.set(0, 1.5, 0.05);
+	glow.scale.set(0.7, 1, 0.55);
+	g.add(glow);
+	const l = new THREE.PointLight(0x9fd8ff, 2.2, 5, 1.8);
+	l.position.set(0, 2.4, 0.6);
+	g.add(l);
+	g.userData = { pages, glow };
+	return g;
+}
+
+const termFS = /* glsl */`
+	uniform float uTime; varying vec2 vUv;
+	float hash(float n) { return fract(sin(n) * 43758.5453); }
+	void main() {
+		vec2 uv = vUv;
+		float rows = 9.0;
+		float line = floor((1.0 - uv.y) * rows);
+		float ly = fract((1.0 - uv.y) * rows);
+		float indent = (line == 0.0 || line == rows - 1.0) ? 0.06 : 0.14;
+		float keyLen = 0.2 + hash(line * 3.1) * 0.3;
+		float valLen = 0.08 + hash(line * 7.7) * 0.18;
+		float bar = smoothstep(0.25, 0.35, ly) * smoothstep(0.75, 0.65, ly);
+		float key = step(indent, uv.x) * step(uv.x, indent + keyLen);
+		float val = step(indent + keyLen + 0.05, uv.x) * step(uv.x, indent + keyLen + 0.05 + valLen);
+		vec3 col = vec3(0.61, 0.86, 1.0) * key + vec3(0.81, 0.57, 0.47) * val;
+		if (line == 0.0 || line == rows - 1.0) col = vec3(1.0, 0.85, 0.3) * step(0.06, uv.x) * step(uv.x, 0.1);
+		float cur = step(abs(line - floor(mod(uTime * 0.7, rows - 2.0)) - 1.0), 0.1) * step(0.5, fract(uTime * 1.6)) * step(abs(uv.x - (indent + keyLen + valLen + 0.08)), 0.012);
+		float frame = 1.0 - smoothstep(0.0, 0.02, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+		vec3 c = col * bar * 1.9 + vec3(0.43, 0.55, 1.0) * (frame * 1.4 + 0.08) + vec3(1.0) * cur * 2.0;
+		gl_FragColor = vec4(c, 1.0);
+	}`;
+
+// settings.json terminal: ranked permanent upgrades.
+export function createConfigTerminal() {
+	const g = new THREE.Group();
+	const metal = toon(0x2a2e44, { roughness: 0.35, metalness: 0.6, rim: 0x6f8cff, rimStrength: 0.5 });
+	const base = new THREE.Mesh(new RoundedBoxGeometry(1.1, 0.5, 0.8, 2, 0.08), metal);
+	base.position.y = 0.25; base.castShadow = true;
+	const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.2, 8), metal);
+	neck.position.y = 1.0;
+	g.add(base, neck);
+	const mat = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }', fragmentShader: termFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+	const panel = new THREE.Group();
+	panel.position.y = 2.1;
+	const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.15), mat);
+	panel.add(screen);
+	const gear = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.07, 6, 8), glowMat(0x9fb4ff, 2));
+	gear.position.set(0.82, 0.62, 0.02);
+	panel.add(gear);
+	g.add(panel);
+	const l = new THREE.PointLight(0x6f8cff, 4, 5, 1.8);
+	l.position.set(0, 2, 0.6);
+	g.add(l);
+	g.userData = { panel, mat, gear };
 	return g;
 }
 
@@ -758,6 +1085,23 @@ export function rewardIcon(kind, color) {
 		case 'boss': {
 			const mat = new THREE.MeshBasicMaterial({ map: glyphTexture('☠', { font: 'bold 100px serif' }), transparent: true, color: new THREE.Color(0xff3048).multiplyScalar(2.2), depthWrite: false, side: THREE.DoubleSide });
 			g.add(new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), mat));
+			break;
+		}
+		case 'patch': {
+			const gear = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.13, 8, 10), new THREE.MeshStandardMaterial({ color: 0xffb000, emissive: 0xff8a00, emissiveIntensity: 0.9, metalness: 0.8, roughness: 0.25, flatShading: true }));
+			const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.2, 10).rotateX(Math.PI / 2), glowMat(0xfff0b0, 2.4));
+			const pr = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.36), new THREE.MeshBasicMaterial({ map: glyphTexture('PR #', { size: 128, font: 'bold 40px ui-monospace, monospace', glow: 8 }), transparent: true, depthWrite: false, color: new THREE.Color(0xffd27a).multiplyScalar(1.8), side: THREE.DoubleSide }));
+			pr.position.y = 0.72;
+			g.add(gear, hub, pr);
+			g.userData.spin = gear;
+			break;
+		}
+		case 'memory': {
+			const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), new THREE.MeshPhysicalMaterial({ color: 0x6f8cff, emissive: 0x3050ff, emissiveIntensity: 1.2, roughness: 0.05, metalness: 0.2, iridescence: 1, flatShading: true }));
+			gem.scale.y = 1.35;
+			const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), glowMat(0xd8e4ff, 2.6));
+			g.add(gem, core);
+			g.userData.spin = gem;
 			break;
 		}
 		case 'stairs': {

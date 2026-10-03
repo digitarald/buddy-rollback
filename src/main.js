@@ -1,6 +1,7 @@
 import { G, loadSave, writeSave, wipeSave } from './state.js';
 import { initRenderer, updateCamera, render, R } from './render.js';
 import { initFX, updateFX } from './fx.js';
+import { initJuice, updateJuice } from './juice.js';
 import { input } from './input.js';
 import { audio } from './audio.js';
 import { Player } from './player.js';
@@ -14,6 +15,7 @@ function init() {
 	G.save = loadSave();
 	initRenderer(document.getElementById('app'));
 	initFX();
+	initJuice();
 	input.attach(R.renderer.domElement);
 	UI.init();
 	audio.setVolumes(G.save.settings.music, G.save.settings.sfx);
@@ -64,6 +66,7 @@ function tick(realDt) {
 	P.updateAnim(animDt, realDt);
 	updateRoom(G.room, ambient);
 	updateFX(blocking ? ambient : dt, realDt);
+	updateJuice(blocking ? ambient : dt, realDt);
 	updateCamera(realDt, P.pos, G.mode === 'run' ? P.aim : null);
 	UI.updateHUD(realDt);
 	render(realDt);
