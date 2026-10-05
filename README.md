@@ -93,6 +93,8 @@ npm run dev      # readable build
 npm run watch    # rebuild on change
 ```
 
+Pushes to `main` publish the production build to GitHub Pages. The workflow can also be run manually from the Actions tab.
+
 Source lives in `src/`. Start at `main.js` (loop), `flow.js` (game flow), `player.js`, `enemies.js`, `bosses.js`, `boons.js`, `story.js`, `juice.js` (shader-driven feedback), `meta.js` (permanent progression), `lore.js` (codex), `weapons.js` (arsenal and Patches) and `vfx.js` (style layer). All art is procedural: Buddy's palette and silhouette are traced from the sprites in the VS Code repo.
 
 ## Open source and attribution
